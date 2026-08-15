@@ -7,7 +7,7 @@ from decimal import Decimal
 from .models import OHLCVBar
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class BacktestConfig:
     initial_cash: Decimal = Decimal("100000")
     fee_bps: Decimal = Decimal("10")
@@ -19,7 +19,7 @@ class BacktestConfig:
             raise ValueError("max_holding_days must be positive")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class BacktestTrade:
     timestamp: str
     side: str
@@ -29,7 +29,7 @@ class BacktestTrade:
     reason: str
 
 
-@dataclass(slots=True)
+@dataclass
 class BacktestResult:
     initial_cash: Decimal
     final_equity: Decimal

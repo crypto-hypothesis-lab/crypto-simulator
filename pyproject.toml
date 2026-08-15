@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "crypto-simulator"
 version = "0.1.0"
 description = "Exchange-neutral crypto market data adapters and reproducible backtests"
-requires-python = ">=3.11"
+requires-python = ">=3.8"
 dependencies = []
 
 [project.optional-dependencies]

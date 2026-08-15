@@ -6,7 +6,7 @@ from decimal import Decimal
 from .models import OHLCVBar
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Signal:
     action: str
     reason: str

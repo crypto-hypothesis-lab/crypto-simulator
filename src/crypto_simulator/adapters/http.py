@@ -11,7 +11,7 @@ class PublicApiError(RuntimeError):
     """Raised when a public provider request cannot be completed safely."""
 
 
-@dataclass(slots=True)
+@dataclass
 class JsonHttpClient:
     timeout_seconds: float = 15.0
     retries: int = 2

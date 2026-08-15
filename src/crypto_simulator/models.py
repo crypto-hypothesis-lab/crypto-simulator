@@ -10,7 +10,7 @@ def _decimal(value: Decimal | int | float | str) -> Decimal:
     return value if isinstance(value, Decimal) else Decimal(str(value))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class OHLCVBar:
     """One exchange-native candle normalized to UTC."""
 
