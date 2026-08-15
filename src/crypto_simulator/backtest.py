@@ -1,0 +1,77 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from decimal import Decimal
+
+from .models import OHLCVBar
+
+
+@dataclass(frozen=True, slots=True)
+class BacktestConfig:
+    initial_cash: Decimal = Decimal("100000")
+    fee_bps: Decimal = Decimal("10")
+    slippage_bps: Decimal = Decimal("5")
+
+
+@dataclass(frozen=True, slots=True)
+class BacktestTrade:
+    timestamp: str
+    side: str
+    price: Decimal
+    quantity: Decimal
+    fee: Decimal
+    reason: str
+
+
+@dataclass(slots=True)
+class BacktestResult:
+    initial_cash: Decimal
+    final_equity: Decimal
+    cash: Decimal
+    quantity: Decimal
+    trades: list[BacktestTrade] = field(default_factory=list)
+    equity_curve: list[tuple[str, Decimal]] = field(default_factory=list)
+
+    @property
+    def return_fraction(self) -> Decimal:
+        if self.initial_cash == 0:
+            return Decimal("0")
+        return self.final_equity / self.initial_cash - Decimal("1")
+
+
+def run_backtest(bars: list[OHLCVBar], strategy, config: BacktestConfig | None = None) -> BacktestResult:
+    config = config or BacktestConfig()
+    if not bars:
+        raise ValueError("at least one bar is required")
+    bars = sorted(bars, key=lambda bar: bar.timestamp)
+    cash = config.initial_cash
+    quantity = Decimal("0")
+    trades: list[BacktestTrade] = []
+    equity_curve: list[tuple[str, Decimal]] = []
+    pending_action = "hold"
+    pending_reason = "initial"
+
+    for index, bar in enumerate(bars):
+        if index > 0 and pending_action in {"buy", "sell"}:
+            price = bar.open * (Decimal("1") + config.slippage_bps / Decimal("10000") if pending_action == "buy" else Decimal("1") - config.slippage_bps / Decimal("10000"))
+            if pending_action == "buy" and quantity == 0 and cash > 0:
+                fee_rate = config.fee_bps / Decimal("10000")
+                quantity = cash / (price * (Decimal("1") + fee_rate))
+                notional = quantity * price
+                fee = notional * fee_rate
+                cash -= notional + fee
+                trades.append(BacktestTrade(bar.timestamp.isoformat(), "buy", price, quantity, fee, pending_reason))
+            elif pending_action == "sell" and quantity > 0:
+                notional = quantity * price
+                fee = notional * config.fee_bps / Decimal("10000")
+                cash += notional - fee
+                trades.append(BacktestTrade(bar.timestamp.isoformat(), "sell", price, quantity, fee, pending_reason))
+                quantity = Decimal("0")
+
+        equity_curve.append((bar.timestamp.isoformat(), cash + quantity * bar.close))
+        signal = strategy.signal(bars[: index + 1])
+        pending_action = signal.action
+        pending_reason = signal.reason
+
+    final_equity = cash + quantity * bars[-1].close
+    return BacktestResult(config.initial_cash, final_equity, cash, quantity, trades, equity_curve)
