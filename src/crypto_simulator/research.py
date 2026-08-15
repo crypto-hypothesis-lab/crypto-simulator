@@ -301,6 +301,90 @@ def evaluate_result(
     )
 
 
+def _trade_report(result: BacktestResult) -> list[dict[str, str]]:
+    return [
+        {
+            "timestamp": trade.timestamp,
+            "side": trade.side,
+            "price": str(trade.price),
+            "quantity": str(trade.quantity),
+            "fee": str(trade.fee),
+            "reason": trade.reason,
+        }
+        for trade in result.trades
+    ]
+
+
+def forward_test_report(
+    bars: list[OHLCVBar],
+    spec: StrategySpec,
+    config: BacktestConfig | None = None,
+    *,
+    holdout_days: int = 30,
+    interval: str = "1hour",
+) -> dict[str, Any]:
+    """Evaluate one frozen strategy on the latest unseen holdout window.
+
+    Unlike candidate search, this function never chooses a strategy. The
+    caller must provide the already-frozen ``StrategySpec``. All candles
+    before the holdout are indicator warm-up only; trades and the reported
+    equity curve begin at the first holdout candle. This makes the output a
+    forward-test evidence record rather than another full-sample optimization.
+    """
+
+    if holdout_days <= 0:
+        raise ValueError("holdout_days must be positive")
+    bars = sorted(bars, key=lambda bar: bar.timestamp)
+    if len(bars) < 2:
+        raise ValueError("at least two bars are required for a forward test")
+    config = config or BacktestConfig()
+    requested_start = bars[-1].timestamp - timedelta(days=holdout_days)
+    start_index = next(
+        (index for index, bar in enumerate(bars) if bar.timestamp >= requested_start),
+        len(bars),
+    )
+    if start_index <= 0 or start_index >= len(bars):
+        raise ValueError("dataset does not contain a separate forward holdout window")
+    holdout_bars = bars[start_index:]
+    result = run_backtest(bars, spec.build(), config, start_index=start_index)
+    metrics = evaluate_result(result, holdout_bars, config)
+    quality = dataset_quality(bars, interval)
+    return {
+        "dataset": {
+            "bars": len(bars),
+            "start": bars[0].timestamp.isoformat(),
+            "end": bars[-1].timestamp.isoformat(),
+            "interval": interval,
+            "exchange": bars[0].exchange,
+            "symbol": bars[0].symbol,
+            "quality": quality,
+        },
+        "holdout": {
+            "requested_days": holdout_days,
+            "warmup_bars": start_index,
+            "bars": len(holdout_bars),
+            "start": holdout_bars[0].timestamp.isoformat(),
+            "end": holdout_bars[-1].timestamp.isoformat(),
+        },
+        "method": {
+            "mode": "frozen_forward_test",
+            "costs": {
+                "fee_bps": str(config.fee_bps),
+                "slippage_bps": str(config.slippage_bps),
+                "spread_bps": str(config.spread_bps),
+                "market_impact_bps": str(config.market_impact_bps),
+                "one_way_execution_bps": str(config.one_way_execution_bps),
+            },
+            "execution": "signal on the previous closed candle, fill at the next candle open",
+        },
+        "strategy": asdict(spec),
+        "metrics": asdict(metrics),
+        "trades": _trade_report(result),
+        "status": "forward_test_only",
+        "promotion_gate": "manual_review_required",
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class StrategyEvaluation:
     spec: StrategySpec

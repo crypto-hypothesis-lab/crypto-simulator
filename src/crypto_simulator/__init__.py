@@ -2,7 +2,7 @@
 
 from .backtest import BacktestConfig, BacktestResult, run_backtest
 from .models import OHLCVBar
-from .research import PerformanceMetrics, StrategySpec, dataset_quality, research_report
+from .research import PerformanceMetrics, StrategySpec, dataset_quality, forward_test_report, research_report
 from .strategy import MultiTimeframeSignal, MultiTimeframeStrategy
 from .timeframes import resample_ohlcv
 
@@ -15,6 +15,7 @@ __all__ = [
     "PerformanceMetrics",
     "StrategySpec",
     "dataset_quality",
+    "forward_test_report",
     "resample_ohlcv",
     "research_report",
     "run_backtest",

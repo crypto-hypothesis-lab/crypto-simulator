@@ -1,9 +1,17 @@
+import json
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from crypto_simulator.backtest import BacktestConfig, run_backtest
 from crypto_simulator.models import OHLCVBar
-from crypto_simulator.research import StrategySpec, dataset_quality, evaluate_result, research_report, walk_forward_search
+from crypto_simulator.research import (
+    StrategySpec,
+    dataset_quality,
+    evaluate_result,
+    forward_test_report,
+    research_report,
+    walk_forward_search,
+)
 from crypto_simulator.strategy import SmaCrossStrategy
 
 
@@ -75,3 +83,21 @@ def test_dataset_quality_reports_missing_and_duplicate_candles() -> None:
     assert quality["duplicate_bars"] == 1
     assert quality["gap_count"] == 1
     assert quality["contiguous"] is False
+
+
+def test_forward_test_report_keeps_strategy_frozen_and_is_json_serializable() -> None:
+    dataset = bars(40)
+    spec = StrategySpec("frozen_test", 2, 3, single_timeframe=True)
+    report = forward_test_report(
+        dataset,
+        spec,
+        BacktestConfig(fee_bps=Decimal("0"), slippage_bps=Decimal("0")),
+        holdout_days=5,
+    )
+
+    assert report["status"] == "forward_test_only"
+    assert report["promotion_gate"] == "manual_review_required"
+    assert report["strategy"]["name"] == "frozen_test"
+    assert report["holdout"]["warmup_bars"] > 0
+    assert report["holdout"]["start"] == (dataset[-1].timestamp - timedelta(days=5)).isoformat()
+    json.dumps(report)

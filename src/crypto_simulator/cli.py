@@ -11,7 +11,7 @@ from .adapters import BinanceAdapter, BitbankAdapter, CcxtPublicAdapter, GmoCoin
 from .backtest import BacktestConfig, run_backtest
 from .dataset import load_ohlcv_csv, merge_ohlcv_csv, write_ohlcv_csv
 from .models import OHLCVBar
-from .research import research_report
+from .research import StrategySpec, forward_test_report, research_report
 from .signals import build_signal_event
 from .strategy import MultiTimeframeStrategy, SmaCrossStrategy
 
@@ -41,6 +41,35 @@ def _write_csv(path: Path, bars: list[OHLCVBar]) -> None:
 def _write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _add_strategy_arguments(command: argparse.ArgumentParser) -> None:
+    command.add_argument("--fast", type=int, default=20)
+    command.add_argument("--slow", type=int, default=50)
+    command.add_argument("--single-timeframe", action="store_true", help="disable the 4-hour and 1-day filters")
+    command.add_argument("--trend-fast", type=int, default=5)
+    command.add_argument("--trend-slow", type=int, default=20)
+    command.add_argument("--regime-fast", type=int, default=5)
+    command.add_argument("--regime-slow", type=int, default=20)
+
+
+def _frozen_strategy_spec(args: argparse.Namespace) -> StrategySpec:
+    if args.single_timeframe:
+        return StrategySpec(
+            f"single_sma_{args.fast}_{args.slow}",
+            args.fast,
+            args.slow,
+            single_timeframe=True,
+        )
+    return StrategySpec(
+        f"mtf_{args.fast}_{args.slow}_{args.trend_fast}_{args.trend_slow}_{args.regime_fast}_{args.regime_slow}",
+        args.fast,
+        args.slow,
+        args.trend_fast,
+        args.trend_slow,
+        args.regime_fast,
+        args.regime_slow,
+    )
 
 
 def _add_window_arguments(command: argparse.ArgumentParser) -> None:
@@ -101,19 +130,13 @@ def main() -> None:
     collect.add_argument("--output", type=Path, default=Path("data/bitbank_btc_jpy_1hour.csv"))
     backtest = subparsers.add_parser("backtest", help="run the baseline strategy against a CSV dataset")
     backtest.add_argument("--input", type=Path, required=True)
-    backtest.add_argument("--fast", type=int, default=20)
-    backtest.add_argument("--slow", type=int, default=50)
+    _add_strategy_arguments(backtest)
     backtest.add_argument("--initial-cash", type=Decimal, default=Decimal("100000"))
     backtest.add_argument("--fee-bps", type=Decimal, default=Decimal("10"))
     backtest.add_argument("--slippage-bps", type=Decimal, default=Decimal("5"))
     backtest.add_argument("--spread-bps", type=Decimal, default=Decimal("0"))
     backtest.add_argument("--market-impact-bps", type=Decimal, default=Decimal("0"))
     backtest.add_argument("--max-holding-days", type=int, default=30)
-    backtest.add_argument("--single-timeframe", action="store_true", help="disable the 4-hour and 1-day filters")
-    backtest.add_argument("--trend-fast", type=int, default=5)
-    backtest.add_argument("--trend-slow", type=int, default=20)
-    backtest.add_argument("--regime-fast", type=int, default=5)
-    backtest.add_argument("--regime-slow", type=int, default=20)
     research = subparsers.add_parser("research", help="compare a finite strategy grid with walk-forward validation")
     research.add_argument("--input", type=Path, required=True)
     research.add_argument("--output", type=Path, default=Path("state/strategy-search.json"))
@@ -127,6 +150,18 @@ def main() -> None:
     research.add_argument("--spread-bps", type=Decimal, default=Decimal("0"))
     research.add_argument("--market-impact-bps", type=Decimal, default=Decimal("0"))
     research.add_argument("--max-holding-days", type=int, default=30)
+    forward = subparsers.add_parser("forward-test", help="evaluate one frozen strategy on the latest holdout window")
+    forward.add_argument("--input", type=Path, required=True)
+    forward.add_argument("--output", type=Path, default=Path("state/forward-test.json"))
+    forward.add_argument("--interval", default="1hour")
+    forward.add_argument("--holdout-days", type=int, default=30)
+    _add_strategy_arguments(forward)
+    forward.add_argument("--initial-cash", type=Decimal, default=Decimal("100000"))
+    forward.add_argument("--fee-bps", type=Decimal, default=Decimal("10"))
+    forward.add_argument("--slippage-bps", type=Decimal, default=Decimal("5"))
+    forward.add_argument("--spread-bps", type=Decimal, default=Decimal("0"))
+    forward.add_argument("--market-impact-bps", type=Decimal, default=Decimal("0"))
+    forward.add_argument("--max-holding-days", type=int, default=30)
     signal = subparsers.add_parser("signal", help="write a paper-trading signal from the latest closed candle")
     signal.add_argument("--input", type=Path, required=True)
     signal.add_argument("--output", type=Path, required=True)
@@ -199,6 +234,29 @@ def main() -> None:
         print(
             f"saved={args.output} candidates={summary['candidate_count']} "
             f"walk_forward_windows={summary['walk_forward_windows']} status={summary['status']}"
+        )
+        return
+
+    if args.command == "forward-test":
+        bars = load_ohlcv_csv(args.input)
+        report = forward_test_report(
+            bars,
+            _frozen_strategy_spec(args),
+            BacktestConfig(
+                initial_cash=args.initial_cash,
+                fee_bps=args.fee_bps,
+                slippage_bps=args.slippage_bps,
+                spread_bps=args.spread_bps,
+                market_impact_bps=args.market_impact_bps,
+                max_holding_days=args.max_holding_days,
+            ),
+            holdout_days=args.holdout_days,
+            interval=args.interval,
+        )
+        _write_json(args.output, report)
+        print(
+            f"saved={args.output} strategy={report['strategy']['name']} "
+            f"holdout_bars={report['holdout']['bars']} status={report['status']}"
         )
         return
 

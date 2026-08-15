@@ -12,6 +12,8 @@ This repository is intentionally safe to publish. It contains no API keys, priva
 - A three-layer decision model: 1-hour execution, 4-hour trend filter, and 1-day regime filter.
 - A rolling CSV collector that merges candles without duplicates.
 - Backtest reports and deterministic paper-signal JSON output.
+- A frozen forward-test report for the latest holdout window, including trades,
+  costs, and a Buy & Hold comparison.
 - Standard-library-only runtime dependencies.
 
 Live orders, account state, private data, alert destinations, and operational policy belong in the private `crypto-operations` repository.
@@ -62,6 +64,7 @@ GitHub Actions workflow run hourly:
 python -m crypto_simulator collect --exchange bitbank --symbol btc_jpy --interval 1hour --hours 72 --output data/bitbank_btc_jpy_1hour.csv
 python -m crypto_simulator backtest --input data/bitbank_btc_jpy_1hour.csv
 python -m crypto_simulator research --input data/bitbank_btc_jpy_1hour.csv --output state/strategy-search.json
+python -m crypto_simulator forward-test --input data/bitbank_btc_jpy_1hour.csv --holdout-days 30 --output state/forward-test.json
 python -m crypto_simulator signal --input data/bitbank_btc_jpy_1hour.csv --interval 1hour --output state/latest-signal.json
 # For a baseline comparison only:
 python -m crypto_simulator signal --single-timeframe --input data/bitbank_btc_jpy_1hour.csv --interval 1hour --output state/latest-signal.json
@@ -90,10 +93,21 @@ example with `--spread-bps 10 --market-impact-bps 5`. The report marks a result
 return and the median OOS excess return is positive; fewer than six qualifying
 windows are still treated as low statistical power.
 
+`forward-test` takes one already-frozen strategy configuration and evaluates
+only the latest holdout window. Earlier candles are indicator warm-up and
+cannot create reported trades. The JSON is deliberately marked
+`forward_test_only`/`manual_review_required`: it is evidence for a paper-trading
+decision, not an automatic promotion or live-order instruction.
+
 The `Research Binance BTC/USDT` workflow can be started manually from GitHub
 Actions. It downloads public history, runs the fixed-candidate walk-forward
 research, and uploads only the JSON report as a 30-day artifact; the raw price
 history is not committed to Git.
+
+The `Forward test Binance BTC/USDT` workflow is also manual. It accepts a
+frozen execution SMA and holdout length, applies explicit spread and market
+impact assumptions, and uploads only the forward-test JSON artifact. It does
+not select or promote a strategy automatically.
 
 CCXT is available as a public-data-only adapter for supported venues. It does
 not accept API keys and exposes no order or withdrawal methods:
