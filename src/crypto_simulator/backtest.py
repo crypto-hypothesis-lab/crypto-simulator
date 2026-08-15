@@ -7,6 +7,13 @@ from decimal import Decimal
 from .models import OHLCVBar
 
 
+def _strategy_signal(strategy, history: list[OHLCVBar]):
+    signal_sorted = getattr(strategy, "signal_sorted", None)
+    if callable(signal_sorted):
+        return signal_sorted(history)
+    return strategy.signal(history)
+
+
 @dataclass(frozen=True, slots=True)
 class BacktestConfig:
     initial_cash: Decimal = Decimal("100000")
@@ -37,6 +44,7 @@ class BacktestResult:
     quantity: Decimal
     trades: list[BacktestTrade] = field(default_factory=list)
     equity_curve: list[tuple[str, Decimal]] = field(default_factory=list)
+    position_curve: list[tuple[str, Decimal]] = field(default_factory=list)
 
     @property
     def return_fraction(self) -> Decimal:
@@ -45,21 +53,44 @@ class BacktestResult:
         return self.final_equity / self.initial_cash - Decimal("1")
 
 
-def run_backtest(bars: list[OHLCVBar], strategy, config: BacktestConfig | None = None) -> BacktestResult:
+def run_backtest(
+    bars: list[OHLCVBar],
+    strategy,
+    config: BacktestConfig | None = None,
+    *,
+    start_index: int = 0,
+) -> BacktestResult:
+    """Run a no-lookahead backtest.
+
+    ``start_index`` is useful for walk-forward evaluation: all earlier bars are
+    supplied as indicator warm-up history, but trades and the equity curve start
+    flat at ``start_index``.
+    """
+
     config = config or BacktestConfig()
     if not bars:
         raise ValueError("at least one bar is required")
     bars = sorted(bars, key=lambda bar: bar.timestamp)
+    if start_index < 0 or start_index >= len(bars):
+        raise ValueError("start_index must refer to a bar in the dataset")
     cash = config.initial_cash
     quantity = Decimal("0")
     trades: list[BacktestTrade] = []
     equity_curve: list[tuple[str, Decimal]] = []
+    position_curve: list[tuple[str, Decimal]] = []
     pending_action = "hold"
     pending_reason = "initial"
     entry_timestamp = None
     max_holding = timedelta(days=config.max_holding_days)
+    history: list[OHLCVBar] = []
 
     for index, bar in enumerate(bars):
+        history.append(bar)
+        if index < start_index:
+            signal = _strategy_signal(strategy, history)
+            pending_action = signal.action
+            pending_reason = signal.reason
+            continue
         if entry_timestamp is not None and bar.timestamp - entry_timestamp >= max_holding:
             pending_action = "sell"
             pending_reason = "max_holding_period"
@@ -82,9 +113,10 @@ def run_backtest(bars: list[OHLCVBar], strategy, config: BacktestConfig | None =
                 entry_timestamp = None
 
         equity_curve.append((bar.timestamp.isoformat(), cash + quantity * bar.close))
-        signal = strategy.signal(bars[: index + 1])
+        position_curve.append((bar.timestamp.isoformat(), quantity))
+        signal = _strategy_signal(strategy, history)
         pending_action = signal.action
         pending_reason = signal.reason
 
     final_equity = cash + quantity * bars[-1].close
-    return BacktestResult(config.initial_cash, final_equity, cash, quantity, trades, equity_curve)
+    return BacktestResult(config.initial_cash, final_equity, cash, quantity, trades, equity_curve, position_curve)

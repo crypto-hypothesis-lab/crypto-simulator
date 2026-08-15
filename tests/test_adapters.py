@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from crypto_simulator.adapters.binance import BinanceAdapter
 from crypto_simulator.adapters.bitbank import BitbankAdapter
 from crypto_simulator.adapters.gmo_coin import GmoCoinAdapter
 from crypto_simulator.adapters.hyperliquid import HyperliquidAdapter
@@ -26,6 +27,19 @@ def test_hyperliquid_candle_shape_is_normalized() -> None:
     assert len(bars) == 1
     assert bars[0].market_type == "perpetual"
     assert client.urls[0][1]["type"] == "candleSnapshot"
+
+
+def test_binance_kline_shape_is_normalized() -> None:
+    timestamp = 1_700_000_000_000
+    client = FakeClient([[timestamp, "1", "2", "0.5", "1.5", "3", timestamp + 3_599_999, "4.5", 10, "2", "3", "0"]])
+    start = datetime.fromtimestamp(timestamp / 1000, timezone.utc)
+    bars = BinanceAdapter(client).fetch_ohlcv("BTC/USDT", "1hour", start=start, end=start)
+
+    assert len(bars) == 1
+    assert bars[0].exchange == "binance"
+    assert bars[0].symbol == "BTC/USDT"
+    assert bars[0].quote_volume == 4.5
+    assert "symbol=BTCUSDT" in client.urls[0]
 
 
 def test_bitbank_candle_shape_is_normalized() -> None:

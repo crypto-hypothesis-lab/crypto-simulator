@@ -23,3 +23,44 @@ def test_signal_event_is_deterministic_and_paper_ready() -> None:
     assert event["event_id"] == "bitbank:btc_jpy:1735696800000:sma_cross_1_2"
     assert event["action"] == "buy"
     assert event["price"] == "102"
+
+
+def test_multi_timeframe_signal_uses_next_hour_open_and_exposes_layers() -> None:
+    start = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    bars = [
+        OHLCVBar(
+            "bitbank",
+            "btc_jpy",
+            "spot",
+            start + timedelta(hours=index),
+            str(100 + index),
+            str(100 + index),
+            str(100 + index),
+            str(100 + index),
+            "1",
+        )
+        for index in range(74)
+    ]
+    bars[-1] = OHLCVBar("bitbank", "btc_jpy", "spot", bars[-1].timestamp, "250", "250", "250", "250", "1")
+    as_of = bars[-1].timestamp
+    event = build_signal_event(
+        bars,
+        interval="1hour",
+        fast_window=2,
+        slow_window=3,
+        trend_fast_window=2,
+        trend_slow_window=3,
+        regime_fast_window=2,
+        regime_slow_window=3,
+        multi_timeframe=True,
+        as_of=as_of,
+    )
+
+    assert event["action"] == "buy"
+    assert event["decision_price"] == "172"
+    assert event["execution_price"] == "250"
+    assert event["timestamp"] == "2025-01-04T01:00:00+00:00"
+    assert event["price"] == event["execution_price"]
+    assert event["execution_price_source"] == "next_candle_open"
+    assert event["timeframes"]["trend"]["interval"] == "4hour"
+    assert event["timeframes"]["regime"]["interval"] == "1day"
