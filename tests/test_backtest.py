@@ -21,3 +21,20 @@ def test_backtest_uses_next_bar_open_and_accounts_for_fee() -> None:
     assert result.trades[0].side == "buy"
     assert result.trades[0].timestamp.endswith("04:00:00+00:00")
     assert result.final_equity > Decimal("0")
+
+
+def test_backtest_forces_exit_after_maximum_holding_period() -> None:
+    start = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    bars = [
+        OHLCVBar("test", "BTC", "spot", start, "90", "90", "90", "90", "1"),
+        OHLCVBar("test", "BTC", "spot", start + timedelta(hours=1), "100", "100", "100", "100", "1"),
+        OHLCVBar("test", "BTC", "spot", start + timedelta(hours=2), "110", "110", "110", "110", "1"),
+        OHLCVBar("test", "BTC", "spot", start + timedelta(hours=2, days=30), "105", "105", "105", "105", "1"),
+    ]
+    result = run_backtest(
+        bars,
+        SmaCrossStrategy(1, 2),
+        BacktestConfig(initial_cash=Decimal("1000"), fee_bps=Decimal("0"), slippage_bps=Decimal("0"), max_holding_days=30),
+    )
+    assert [trade.side for trade in result.trades] == ["buy", "sell"]
+    assert result.trades[-1].reason == "max_holding_period"
