@@ -106,6 +106,8 @@ def main() -> None:
     backtest.add_argument("--initial-cash", type=Decimal, default=Decimal("100000"))
     backtest.add_argument("--fee-bps", type=Decimal, default=Decimal("10"))
     backtest.add_argument("--slippage-bps", type=Decimal, default=Decimal("5"))
+    backtest.add_argument("--spread-bps", type=Decimal, default=Decimal("0"))
+    backtest.add_argument("--market-impact-bps", type=Decimal, default=Decimal("0"))
     backtest.add_argument("--max-holding-days", type=int, default=30)
     backtest.add_argument("--single-timeframe", action="store_true", help="disable the 4-hour and 1-day filters")
     backtest.add_argument("--trend-fast", type=int, default=5)
@@ -122,6 +124,8 @@ def main() -> None:
     research.add_argument("--initial-cash", type=Decimal, default=Decimal("100000"))
     research.add_argument("--fee-bps", type=Decimal, default=Decimal("10"))
     research.add_argument("--slippage-bps", type=Decimal, default=Decimal("5"))
+    research.add_argument("--spread-bps", type=Decimal, default=Decimal("0"))
+    research.add_argument("--market-impact-bps", type=Decimal, default=Decimal("0"))
     research.add_argument("--max-holding-days", type=int, default=30)
     signal = subparsers.add_parser("signal", help="write a paper-trading signal from the latest closed candle")
     signal.add_argument("--input", type=Path, required=True)
@@ -165,6 +169,8 @@ def main() -> None:
                 initial_cash=args.initial_cash,
                 fee_bps=args.fee_bps,
                 slippage_bps=args.slippage_bps,
+                spread_bps=args.spread_bps,
+                market_impact_bps=args.market_impact_bps,
                 max_holding_days=args.max_holding_days,
             ),
         )
@@ -183,6 +189,8 @@ def main() -> None:
                 initial_cash=args.initial_cash,
                 fee_bps=args.fee_bps,
                 slippage_bps=args.slippage_bps,
+                spread_bps=args.spread_bps,
+                market_impact_bps=args.market_impact_bps,
                 max_holding_days=args.max_holding_days,
             ),
         )

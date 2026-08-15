@@ -244,7 +244,7 @@ def benchmark_curve(bars: list[OHLCVBar], config: BacktestConfig) -> list[tuple[
     if not bars:
         return []
     fee_rate = config.fee_bps / Decimal("10000")
-    entry_price = bars[0].open * (Decimal("1") + config.slippage_bps / Decimal("10000"))
+    entry_price = config.execution_price(bars[0].open, "buy")
     quantity = config.initial_cash / (entry_price * (Decimal("1") + fee_rate))
     cash = config.initial_cash - quantity * entry_price - quantity * entry_price * fee_rate
     return [(bar.timestamp.isoformat(), cash + quantity * bar.close) for bar in bars]
@@ -413,6 +413,24 @@ def research_report(
     )
     quality = dataset_quality(bars, interval)
     positive_oos = [window.test_metrics.excess_return > 0 for window in windows]
+    positive_oos_windows = sum(positive_oos)
+    negative_oos_windows = len(positive_oos) - positive_oos_windows
+    positive_oos_fraction = mean(positive_oos) if positive_oos else None
+    median_oos_excess = (
+        median(window.test_metrics.excess_return for window in windows)
+        if windows
+        else None
+    )
+    if not windows:
+        validation_status = "insufficient_history_for_walk_forward"
+    elif positive_oos_fraction is not None and positive_oos_fraction < 0.6:
+        validation_status = "not_validated"
+    elif median_oos_excess is not None and median_oos_excess <= 0:
+        validation_status = "not_validated"
+    elif len(windows) < 6:
+        validation_status = "low_statistical_power"
+    else:
+        validation_status = "candidate_requires_forward_test"
     return {
         "dataset": {
             "bars": len(bars),
@@ -430,6 +448,9 @@ def research_report(
             "costs": {
                 "fee_bps": str(config.fee_bps),
                 "slippage_bps": str(config.slippage_bps),
+                "spread_bps": str(config.spread_bps),
+                "market_impact_bps": str(config.market_impact_bps),
+                "one_way_execution_bps": str(config.one_way_execution_bps),
             },
             "selection": "train robust_score = total_return - max_drawdown; ties prefer benchmark excess return and lower drawdown",
         },
@@ -452,13 +473,16 @@ def research_report(
         "summary": {
             "candidate_count": len(specs),
             "walk_forward_windows": len(windows),
-            "positive_oos_excess_fraction": mean(positive_oos) if positive_oos else None,
-            "median_oos_excess_return": median(
-                window.test_metrics.excess_return for window in windows
-            )
-            if windows
-            else None,
+            "positive_oos_excess_fraction": positive_oos_fraction,
+            "positive_oos_windows": positive_oos_windows,
+            "negative_oos_windows": negative_oos_windows,
+            "median_oos_excess_return": median_oos_excess,
             "data_quality_status": "complete" if quality["contiguous"] else "gaps_or_duplicates_detected",
-            "status": "ready_for_review" if windows else "insufficient_history_for_walk_forward",
+            "validation_rule": {
+                "minimum_windows": 6,
+                "minimum_positive_oos_excess_fraction": 0.6,
+                "minimum_median_oos_excess_return": 0.0,
+            },
+            "status": validation_status,
         },
     }

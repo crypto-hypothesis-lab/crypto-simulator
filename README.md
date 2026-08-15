@@ -31,7 +31,8 @@ The first paper-trading configuration is bitbank BTC/JPY spot and long-only:
 - 1-hour: SMA(20/50) creates the entry/exit decision.
 - 4-hour: SMA(5/20) is the trend filter.
 - 1-day: SMA(5/20) is the broad regime filter.
-- Fees are 10 bps, slippage is 5 bps, and maximum holding time is 30 days.
+- Fees are 10 bps, slippage is 5 bps, spread and market impact default to 0 bps,
+  and maximum holding time is 30 days.
 
 The higher-timeframe bars are aggregated only from complete, contiguous 1-hour
 candles. Until enough 4-hour and 1-day history exists, the multi-timeframe
@@ -83,7 +84,11 @@ walk-forward selection when the dataset contains enough history. A candidate
 that is merely the best full-sample result is not considered validated. The
 report also includes expected bars, missing candles, duplicate timestamps, and
 the largest gap so a short or discontinuous dataset is visible before results
-are interpreted.
+are interpreted. Spread and market impact can be stressed explicitly, for
+example with `--spread-bps 10 --market-impact-bps 5`. The report marks a result
+`not_validated` unless at least 60% of OOS windows beat buy-and-hold on excess
+return and the median OOS excess return is positive; fewer than six qualifying
+windows are still treated as low statistical power.
 
 The `Research Binance BTC/USDT` workflow can be started manually from GitHub
 Actions. It downloads public history, runs the fixed-candidate walk-forward
@@ -111,7 +116,7 @@ only requests `contents: write` because it commits the public candle dataset.
 ## Research boundary
 
 The backtester executes a signal formed at the close of bar `t` at the open of
-bar `t+1`. Fees and slippage are explicit inputs. This is a conservative
-research model, not an execution simulator.
+bar `t+1`. Fees, slippage, half-spread, and market impact are explicit inputs.
+This is a conservative research model, not an execution simulator.
 
 This software is a research tool, not investment advice or an order-execution system.

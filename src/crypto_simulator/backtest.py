@@ -20,10 +20,27 @@ class BacktestConfig:
     fee_bps: Decimal = Decimal("10")
     slippage_bps: Decimal = Decimal("5")
     max_holding_days: int = 30
+    spread_bps: Decimal = Decimal("0")
+    market_impact_bps: Decimal = Decimal("0")
 
     def __post_init__(self) -> None:
         if self.max_holding_days <= 0:
             raise ValueError("max_holding_days must be positive")
+        for name in ("fee_bps", "slippage_bps", "spread_bps", "market_impact_bps"):
+            if getattr(self, name) < 0:
+                raise ValueError(f"{name} must not be negative")
+
+    @property
+    def one_way_execution_bps(self) -> Decimal:
+        """All price-impact costs applied once on entry or exit."""
+
+        return self.slippage_bps + self.spread_bps / Decimal("2") + self.market_impact_bps
+
+    def execution_price(self, open_price: Decimal, side: str) -> Decimal:
+        if side not in {"buy", "sell"}:
+            raise ValueError("side must be buy or sell")
+        rate = self.one_way_execution_bps / Decimal("10000")
+        return open_price * (Decimal("1") + rate if side == "buy" else Decimal("1") - rate)
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,7 +112,7 @@ def run_backtest(
             pending_action = "sell"
             pending_reason = "max_holding_period"
         if index > 0 and pending_action in {"buy", "sell"}:
-            price = bar.open * (Decimal("1") + config.slippage_bps / Decimal("10000") if pending_action == "buy" else Decimal("1") - config.slippage_bps / Decimal("10000"))
+            price = config.execution_price(bar.open, pending_action)
             if pending_action == "buy" and quantity == 0 and cash > 0:
                 fee_rate = config.fee_bps / Decimal("10000")
                 quantity = cash / (price * (Decimal("1") + fee_rate))
