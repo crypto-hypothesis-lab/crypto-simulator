@@ -9,7 +9,8 @@ This repository is intentionally safe to publish. It contains no API keys, priva
 - Public OHLCV adapters for Hyperliquid, bitbank, and GMO Coin.
 - One normalized `OHLCVBar` model with UTC timestamps and decimal prices.
 - A no-lookahead long-only SMA crossover backtester.
-- A small CLI for public data collection and synthetic demonstrations.
+- A rolling CSV collector that merges candles without duplicates.
+- Backtest reports and deterministic paper-signal JSON output.
 - Standard-library-only runtime dependencies.
 
 Live orders, account state, private data, alert destinations, and operational policy belong in the private `crypto-operations` repository.
@@ -24,6 +25,9 @@ python -m pytest
 python -m crypto_simulator demo
 ```
 
+The first paper-trading configuration is bitbank BTC/JPY spot, 1-hour candles,
+long-only SMA(20/50), 10 bps fees, and 5 bps slippage.
+
 Fetch public candles without credentials:
 
 ```powershell
@@ -31,6 +35,19 @@ python -m crypto_simulator fetch --exchange hyperliquid --symbol BTC --interval 
 python -m crypto_simulator fetch --exchange bitbank --symbol btc_jpy --interval 1hour --hours 72 --output data/btc_jpy.csv
 python -m crypto_simulator fetch --exchange gmo --symbol BTC --interval 1hour --hours 72 --output data/gmo_btc.csv
 ```
+
+For the recommended rolling dataset, run the following once or let the included
+GitHub Actions workflow run hourly:
+
+```powershell
+python -m crypto_simulator collect --exchange bitbank --symbol btc_jpy --interval 1hour --hours 72 --output data/bitbank_btc_jpy_1hour.csv
+python -m crypto_simulator backtest --input data/bitbank_btc_jpy_1hour.csv
+python -m crypto_simulator signal --input data/bitbank_btc_jpy_1hour.csv --interval 1hour --output state/latest-signal.json
+```
+
+`collect` keeps a rolling overlap so a late candle does not create a duplicate.
+`signal` ignores the currently forming candle and writes an event that can be
+passed to the private operations repository.
 
 ## Exchange notes
 
