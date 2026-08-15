@@ -2,6 +2,8 @@ name: Collect bitbank BTC/JPY candles
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "5 * * * *"
 
 permissions:
   contents: write
