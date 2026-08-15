@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
-from .adapters import BitbankAdapter, GmoCoinAdapter, HyperliquidAdapter
+from .adapters import BitbankAdapter, CcxtPublicAdapter, GmoCoinAdapter, HyperliquidAdapter
 from .backtest import BacktestConfig, run_backtest
 from .dataset import load_ohlcv_csv, merge_ohlcv_csv, write_ohlcv_csv
 from .models import OHLCVBar
@@ -25,7 +25,11 @@ def synthetic_bars(count: int = 120) -> list[OHLCVBar]:
     return bars
 
 
-def _adapter(name: str):
+def _adapter(name: str, ccxt_id: str | None = None):
+    if name == "ccxt":
+        if not ccxt_id:
+            raise ValueError("--ccxt-id is required when --exchange ccxt is used")
+        return CcxtPublicAdapter(ccxt_id)
     return {"hyperliquid": HyperliquidAdapter, "bitbank": BitbankAdapter, "gmo": GmoCoinAdapter}[name]()
 
 
@@ -43,13 +47,15 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("demo")
     fetch = subparsers.add_parser("fetch")
-    fetch.add_argument("--exchange", choices=["hyperliquid", "bitbank", "gmo"], required=True)
+    fetch.add_argument("--exchange", choices=["hyperliquid", "bitbank", "gmo", "ccxt"], required=True)
+    fetch.add_argument("--ccxt-id")
     fetch.add_argument("--symbol", required=True)
     fetch.add_argument("--interval", required=True)
     fetch.add_argument("--hours", type=int, default=72)
     fetch.add_argument("--output", type=Path, required=True)
     collect = subparsers.add_parser("collect", help="fetch and merge a rolling public dataset")
-    collect.add_argument("--exchange", choices=["hyperliquid", "bitbank", "gmo"], default="bitbank")
+    collect.add_argument("--exchange", choices=["hyperliquid", "bitbank", "gmo", "ccxt"], default="bitbank")
+    collect.add_argument("--ccxt-id")
     collect.add_argument("--symbol", default="btc_jpy")
     collect.add_argument("--interval", default="1hour")
     collect.add_argument("--hours", type=int, default=72)
@@ -67,6 +73,9 @@ def main() -> None:
     signal.add_argument("--interval", default="1hour")
     signal.add_argument("--fast", type=int, default=20)
     signal.add_argument("--slow", type=int, default=50)
+    duckdb_import = subparsers.add_parser("duckdb-import", help="import normalized CSV candles into local DuckDB")
+    duckdb_import.add_argument("--input", type=Path, required=True)
+    duckdb_import.add_argument("--database", type=Path, default=Path("data/crypto-market.duckdb"))
     args = parser.parse_args()
 
     if args.command == "demo":
@@ -99,8 +108,16 @@ def main() -> None:
         print(f"saved={args.output} action={event['action']} timestamp={event['timestamp']}")
         return
 
+    if args.command == "duckdb-import":
+        from .duckdb_store import DuckDbCandleStore
+
+        bars = load_ohlcv_csv(args.input)
+        imported = DuckDbCandleStore(args.database).upsert(bars)
+        print(f"database={args.database} imported={imported}")
+        return
+
     end = datetime.now(timezone.utc)
-    bars = _adapter(args.exchange).fetch_ohlcv(args.symbol, args.interval, start=end - timedelta(hours=args.hours), end=end)
+    bars = _adapter(args.exchange, args.ccxt_id).fetch_ohlcv(args.symbol, args.interval, start=end - timedelta(hours=args.hours), end=end)
     if args.command == "collect":
         added, total = merge_ohlcv_csv(args.output, bars)
         last_timestamp = bars[-1].timestamp.isoformat() if bars else "none"

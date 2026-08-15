@@ -28,6 +28,12 @@ python -m crypto_simulator demo
 The first paper-trading configuration is bitbank BTC/JPY spot, 1-hour candles,
 long-only SMA(20/50), 10 bps fees, and 5 bps slippage.
 
+Optional integrations are kept out of the base install:
+
+```powershell
+python -m pip install -e ".[dev,analysis,exchanges]"
+```
+
 Fetch public candles without credentials:
 
 ```powershell
@@ -43,11 +49,23 @@ GitHub Actions workflow run hourly:
 python -m crypto_simulator collect --exchange bitbank --symbol btc_jpy --interval 1hour --hours 72 --output data/bitbank_btc_jpy_1hour.csv
 python -m crypto_simulator backtest --input data/bitbank_btc_jpy_1hour.csv
 python -m crypto_simulator signal --input data/bitbank_btc_jpy_1hour.csv --interval 1hour --output state/latest-signal.json
+python -m crypto_simulator duckdb-import --input data/bitbank_btc_jpy_1hour.csv --database data/crypto-market.duckdb
 ```
 
 `collect` keeps a rolling overlap so a late candle does not create a duplicate.
 `signal` ignores the currently forming candle and writes an event that can be
 passed to the private operations repository.
+
+CCXT is available as a public-data-only adapter for supported venues. It does
+not accept API keys and exposes no order or withdrawal methods:
+
+```powershell
+python -m crypto_simulator fetch --exchange ccxt --ccxt-id bitbank --symbol BTC/JPY --interval 1h --hours 72 --output data/ccxt_btc_jpy.csv
+```
+
+DuckDB is local storage for research queries; it is not a remote service and is
+ignored by Git. The GitHub Actions workflow uses pinned action commit SHAs and
+only requests `contents: write` because it commits the public candle dataset.
 
 ## Exchange notes
 
