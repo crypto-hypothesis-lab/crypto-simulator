@@ -26,7 +26,8 @@ python -m crypto_simulator demo
 ```
 
 The first paper-trading configuration is bitbank BTC/JPY spot, 1-hour candles,
-long-only SMA(20/50), 10 bps fees, and 5 bps slippage.
+long-only SMA(20/50), 10 bps fees, 5 bps slippage, and a 30-day maximum holding
+period. The one-month limit is represented as 30 days for reproducibility.
 
 Optional integrations are kept out of the base install:
 
