@@ -313,7 +313,7 @@ def main() -> None:
             }
         leverage = args.max_gross_leverage
         if leverage is None:
-            leverage = Decimal("1") if args.market == "spot" else Decimal("1.5")
+            leverage = Decimal("1") if args.market == "spot" else Decimal("5")
         report = portfolio_research_report(
             universe,
             market=args.market,

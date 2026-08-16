@@ -106,9 +106,11 @@ decision, not an automatic promotion or live-order instruction.
 regime gate. Its theme proxy is deliberately data-driven: relative momentum,
 short momentum, and volume acceleration. Spot candidates can only hold positive
 weights or cash. Perpetual candidates can hold signed weights and short in
-risk-off regimes. HyperLiquid funding observations can be passed as JSON and
-are aggregated into the selected price-bar interval before charging the
-portfolio.
+risk-off regimes. Perpetual gross exposure is confidence-scaled: risk-on
+exposure ranges from 1x toward a 5x cap, while risk-off short exposure is capped
+at 2x; strong trends and breadth increase confidence, while realized volatility
+reduces it. HyperLiquid funding observations can be passed as JSON and are
+aggregated into the selected price-bar interval before charging the portfolio.
 
 The `Research Binance BTC/USDT` workflow can be started manually from GitHub
 Actions. It downloads public history, runs the fixed-candidate walk-forward

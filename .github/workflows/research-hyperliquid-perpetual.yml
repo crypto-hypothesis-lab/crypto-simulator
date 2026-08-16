@@ -61,7 +61,7 @@ jobs:
           --slippage-bps 5
           --spread-bps 10
           --market-impact-bps 5
-          --max-gross-leverage 1.5
+          --max-gross-leverage 5
           --output state/hyperliquid-perpetual-portfolio-research.json
       - name: Upload perpetual research report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

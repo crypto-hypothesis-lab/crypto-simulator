@@ -16,6 +16,10 @@ def _safe_float(value: float) -> float:
     return value if isfinite(value) else 0.0
 
 
+def _clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
+    return max(lower, min(upper, value))
+
+
 def _sma(values: list[Decimal], window: int) -> Decimal:
     if len(values) < window:
         raise ValueError("not enough values for moving average")
@@ -36,6 +40,11 @@ def _percentile_rank(value: float, values: list[float]) -> float:
     if len(values) <= 1:
         return 0.5
     return sum(candidate < value for candidate in values) / (len(values) - 1)
+
+
+def _realized_volatility(closes: list[Decimal], window: int = 20) -> float:
+    returns = [_return(closes[: index + 1], 1) for index in range(1, len(closes))]
+    return _safe_float(pstdev(returns[-window:]) if len(returns) >= 2 else 0.0)
 
 
 def _curve_returns(curve: list[tuple[str, Decimal]]) -> list[float]:
@@ -157,6 +166,8 @@ class ThemeMomentumSpec:
     short_exposure: float = 0.0
     risk_off_short: bool = False
     benchmark_symbol: str | None = None
+    max_leverage: float = 1.0
+    risk_off_max_leverage: float = 1.0
 
     def __post_init__(self) -> None:
         if self.market not in {"spot", "perpetual"}:
@@ -174,6 +185,10 @@ class ThemeMomentumSpec:
             raise ValueError("exposure values must not be negative")
         if self.market == "spot" and self.short_exposure:
             raise ValueError("spot candidates cannot have short exposure")
+        if self.max_leverage <= 0 or self.risk_off_max_leverage <= 0:
+            raise ValueError("leverage limits must be positive")
+        if self.market == "spot" and self.max_leverage > 1:
+            raise ValueError("spot candidates cannot use leverage")
 
     @property
     def minimum_history(self) -> int:
@@ -191,9 +206,9 @@ def default_theme_specs(market: str) -> list[ThemeMomentumSpec]:
         ]
     if market == "perpetual":
         return [
-            ThemeMomentumSpec("perp_regime_momo_7_30_top1", market="perpetual", momentum_fast=7, momentum_slow=30, top_n=1, bottom_n=1, long_exposure=0.70, short_exposure=0.30, risk_off_short=True),
-            ThemeMomentumSpec("perp_regime_momo_14_42_top2", market="perpetual", momentum_fast=14, momentum_slow=42, top_n=2, bottom_n=2, long_exposure=0.65, short_exposure=0.35, risk_off_short=True),
-            ThemeMomentumSpec("perp_regime_momo_21_63_top2", market="perpetual", momentum_fast=21, momentum_slow=63, regime_slow=120, top_n=2, bottom_n=2, long_exposure=0.60, short_exposure=0.40, risk_off_short=True),
+            ThemeMomentumSpec("perp_regime_momo_7_30_top1", market="perpetual", momentum_fast=7, momentum_slow=30, top_n=1, bottom_n=1, long_exposure=0.70, short_exposure=0.30, risk_off_short=True, max_leverage=5.0, risk_off_max_leverage=2.0),
+            ThemeMomentumSpec("perp_regime_momo_14_42_top2", market="perpetual", momentum_fast=14, momentum_slow=42, top_n=2, bottom_n=2, long_exposure=0.65, short_exposure=0.35, risk_off_short=True, max_leverage=5.0, risk_off_max_leverage=2.0),
+            ThemeMomentumSpec("perp_regime_momo_21_63_top2", market="perpetual", momentum_fast=21, momentum_slow=63, regime_slow=120, top_n=2, bottom_n=2, long_exposure=0.60, short_exposure=0.40, risk_off_short=True, max_leverage=5.0, risk_off_max_leverage=2.0),
         ]
     raise ValueError("market must be spot or perpetual")
 
@@ -206,6 +221,8 @@ class PortfolioDecision:
     scores: dict[str, float]
     long_symbols: tuple[str, ...] = ()
     short_symbols: tuple[str, ...] = ()
+    confidence: float = 0.0
+    leverage: float = 0.0
 
 
 class ThemeMomentumStrategy:
@@ -274,6 +291,24 @@ class ThemeMomentumStrategy:
             )
             for symbol, values in metrics.items()
         }
+        regime_strength = _clamp(abs(float(benchmark_fast / benchmark_slow - Decimal("1"))) / 0.05)
+        breadth_confidence = breadth if risk_on else 1.0 - breadth
+        score_spread = max(scores.values(), default=0.0) - min(scores.values(), default=0.0)
+        theme_confidence = _clamp(score_spread / 0.25)
+        volatility_factor = _clamp(0.06 / (0.06 + _realized_volatility(benchmark_closes)), 0.35, 1.0)
+        confidence = _clamp(
+            (0.45 * regime_strength + 0.35 * breadth_confidence + 0.20 * theme_confidence)
+            * volatility_factor
+        )
+        if self.spec.market == "perpetual":
+            if risk_on:
+                leverage = 1.0 + (self.spec.max_leverage - 1.0) * confidence
+            elif self.spec.risk_off_short:
+                leverage = 0.5 + (self.spec.risk_off_max_leverage - 0.5) * confidence
+            else:
+                leverage = 0.0
+        else:
+            leverage = 1.0 if risk_on else 0.0
         ranked = sorted(scores, key=lambda symbol: (scores[symbol], symbol), reverse=True)
         reverse_ranked = list(reversed(ranked))
         longs = tuple(ranked[: self.spec.top_n])
@@ -286,16 +321,16 @@ class ThemeMomentumStrategy:
                 weights = {symbol: weight for symbol in longs}
         elif risk_on:
             if longs:
-                weight = self.spec.long_exposure / len(longs)
+                weight = self.spec.long_exposure * leverage / len(longs)
                 weights.update({symbol: weight for symbol in longs})
             if shorts and self.spec.short_exposure:
-                weight = -self.spec.short_exposure / len(shorts)
+                weight = -self.spec.short_exposure * leverage / len(shorts)
                 weights.update({symbol: weight for symbol in shorts})
         elif self.spec.risk_off_short and shorts:
-            weight = -self.spec.short_exposure / len(shorts)
+            weight = -self.spec.short_exposure * leverage / len(shorts)
             weights.update({symbol: weight for symbol in shorts})
 
-        return PortfolioDecision(weights, regime, _safe_float(breadth), scores, longs, shorts)
+        return PortfolioDecision(weights, regime, _safe_float(breadth), scores, longs, shorts, confidence, leverage)
 
 
 @dataclass(frozen=True, slots=True)
@@ -385,6 +420,15 @@ def _normalise_universe(universe: Mapping[str, list[OHLCVBar]]) -> tuple[dict[st
 def _trade_order(symbol: str, delta: Decimal, current: Decimal) -> tuple[int, str]:
     closing = current != 0 and current * delta < 0
     return (0 if closing else 1, symbol)
+
+
+def _cap_target_weights(target_weights: Mapping[str, float], max_gross_leverage: Decimal) -> dict[str, float]:
+    gross = sum(abs(weight) for weight in target_weights.values())
+    cap = float(max_gross_leverage)
+    if gross <= cap or gross == 0:
+        return dict(target_weights)
+    scale = cap / gross
+    return {symbol: weight * scale for symbol, weight in target_weights.items()}
 
 
 def _execute_target(
@@ -499,7 +543,7 @@ def run_portfolio_backtest(
             cash = _execute_target(
                 timestamp=timestamp,
                 current_bars=current,
-                target_weights=pending.target_weights,
+                target_weights=_cap_target_weights(pending.target_weights, config.max_gross_leverage),
                 positions=positions,
                 cash=cash,
                 equity=equity_at_open,
@@ -527,6 +571,8 @@ def run_portfolio_backtest(
                 "long_symbols": list(decision.long_symbols),
                 "short_symbols": list(decision.short_symbols),
                 "target_weights": decision.target_weights,
+                "confidence": decision.confidence,
+                "leverage": decision.leverage,
             }
         )
 
@@ -706,7 +752,7 @@ def portfolio_research_report(
 ) -> dict[str, Any]:
     if market not in {"spot", "perpetual"}:
         raise ValueError("market must be spot or perpetual")
-    config = config or PortfolioConfig(max_gross_leverage=Decimal("1") if market == "spot" else Decimal("1.5"))
+    config = config or PortfolioConfig(max_gross_leverage=Decimal("1") if market == "spot" else Decimal("5"))
     specs = specs or default_theme_specs(market)
     if any(spec.market != market for spec in specs):
         raise ValueError("all strategy specs must match market")
@@ -754,6 +800,7 @@ def portfolio_research_report(
             "signal": "close-only cross-sectional theme proxy; execute target weights at next common bar open",
             "theme_proxy": "relative momentum 45%, short momentum 35%, volume acceleration 20%",
             "regime": "BTC fast/slow trend plus universe breadth",
+            "leverage_policy": "perpetuals scale gross exposure from confidence: risk-on 1x to max 5x, risk-off shorts 0.5x to max 2x; volatility reduces confidence",
             "market": market,
             "funding_rates_included": bool(funding_rates),
             "costs": {

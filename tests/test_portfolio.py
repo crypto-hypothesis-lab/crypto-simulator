@@ -107,3 +107,25 @@ def test_theme_portfolio_report_is_walk_forward_and_json_serializable() -> None:
     assert report["method"]["theme_proxy"]
     assert report["summary"]["walk_forward_windows"] > 0
     json.dumps(report)
+
+
+def test_perpetual_leverage_is_confidence_scaled_and_capped_at_five() -> None:
+    strategy = ThemeMomentumStrategy(
+        ThemeMomentumSpec(
+            "dynamic",
+            market="perpetual",
+            momentum_fast=14,
+            momentum_slow=42,
+            regime_fast=20,
+            regime_slow=100,
+            max_leverage=5,
+            risk_off_max_leverage=2,
+        )
+    )
+
+    decision = strategy.decision(make_universe())
+
+    assert decision.regime == "risk_on"
+    assert 1.0 <= decision.leverage <= 5.0
+    assert 0.0 <= decision.confidence <= 1.0
+    assert sum(abs(weight) for weight in decision.target_weights.values()) <= 5.0
