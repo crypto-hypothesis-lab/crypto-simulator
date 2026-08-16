@@ -10,8 +10,8 @@ This repository is intentionally safe to publish. It contains no API keys, priva
 - One normalized `OHLCVBar` model with UTC timestamps and decimal prices.
 - A no-lookahead long-only multi-timeframe SMA backtester.
 - A three-layer decision model: 1-hour execution, 4-hour trend filter, and 1-day regime filter.
-- A regime-aware cross-sectional portfolio researcher for spot long-only and
-  perpetual long/short markets.
+- A regime-aware cross-sectional portfolio researcher for spot long-only,
+  Bitbank-style margin long/short, and perpetual long/short markets.
 - A rolling CSV collector that merges candles without duplicates.
 - Backtest reports and deterministic paper-signal JSON output.
 - A frozen forward-test report for the latest holdout window, including trades,
@@ -68,6 +68,7 @@ python -m crypto_simulator backtest --input data/bitbank_btc_jpy_1hour.csv
 python -m crypto_simulator research --input data/bitbank_btc_jpy_1hour.csv --output state/strategy-search.json
 python -m crypto_simulator forward-test --input data/bitbank_btc_jpy_1hour.csv --holdout-days 30 --output state/forward-test.json
 python -m crypto_simulator portfolio-research --market spot --input BTC=data/btc_jpy_1day.csv --input ETH=data/eth_jpy_1day.csv --input XRP=data/xrp_jpy_1day.csv --output state/spot-portfolio-search.json
+python -m crypto_simulator portfolio-research --market margin --input BTC=data/btc_jpy_1day.csv --input ETH=data/eth_jpy_1day.csv --input XRP=data/xrp_jpy_1day.csv --margin-interest-bps-per-day 4 --max-gross-leverage 2 --output state/bitbank-margin-portfolio-search.json
 python -m crypto_simulator signal --input data/bitbank_btc_jpy_1hour.csv --interval 1hour --output state/latest-signal.json
 # For a baseline comparison only:
 python -m crypto_simulator signal --single-timeframe --input data/bitbank_btc_jpy_1hour.csv --interval 1hour --output state/latest-signal.json
@@ -105,12 +106,17 @@ decision, not an automatic promotion or live-order instruction.
 `portfolio-research` evaluates a small fixed universe with a BTC trend/breadth
 regime gate. Its theme proxy is deliberately data-driven: relative momentum,
 short momentum, and volume acceleration. Spot candidates can only hold positive
-weights or cash. Perpetual candidates can hold signed weights and short in
+weights or cash. Margin candidates model Bitbank credit trading: signed
+long/short weights, a 2x cap, and 0.04%/day financing as a conservative
+assumption. Perpetual candidates can hold signed weights and short in
 risk-off regimes. Perpetual gross exposure is confidence-scaled: risk-on
 exposure ranges from 1x toward a 5x cap, while risk-off short exposure is capped
 at 2x; strong trends and breadth increase confidence, while realized volatility
 reduces it. HyperLiquid funding observations can be passed as JSON and are
 aggregated into the selected price-bar interval before charging the portfolio.
+For HyperLiquid, pass a JSON symbol-to-cap map from the public `meta` response
+with `--max-leverage-map`; a 3x asset is therefore capped at 3x
+even when the portfolio research ceiling is 5x.
 
 The `Research Binance BTC/USDT` workflow can be started manually from GitHub
 Actions. It downloads public history, runs the fixed-candidate walk-forward
@@ -122,10 +128,12 @@ frozen execution SMA and holdout length, applies explicit spread and market
 impact assumptions, and uploads only the forward-test JSON artifact. It does
 not select or promote a strategy automatically.
 
-The `Research bitbank spot portfolio` and `Research HyperLiquid perpetual
-portfolio` workflows are manual for now. They fetch a fixed universe, run
-cost-aware walk-forward research, and upload only the JSON report. They are not
-live trading workflows and do not store raw market data in Git.
+The `Research bitbank spot portfolio` workflow also runs a Bitbank margin
+variant with short positions and the documented 0.04%/day credit-interest
+assumption. The `Research HyperLiquid perpetual portfolio` workflow fetches
+current public per-asset leverage caps before testing. Both workflows are
+manual, cost-aware, report-only research, and do not store raw market data in
+Git.
 
 CCXT is available as a public-data-only adapter for supported venues. It does
 not accept API keys and exposes no order or withdrawal methods:

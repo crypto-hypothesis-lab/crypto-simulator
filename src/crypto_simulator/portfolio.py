@@ -170,8 +170,8 @@ class ThemeMomentumSpec:
     risk_off_max_leverage: float = 1.0
 
     def __post_init__(self) -> None:
-        if self.market not in {"spot", "perpetual"}:
-            raise ValueError("market must be spot or perpetual")
+        if self.market not in {"spot", "margin", "perpetual"}:
+            raise ValueError("market must be spot, margin, or perpetual")
         for name in ("momentum_fast", "momentum_slow", "regime_fast", "regime_slow", "top_n", "bottom_n"):
             if getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be positive")
@@ -210,7 +210,13 @@ def default_theme_specs(market: str) -> list[ThemeMomentumSpec]:
             ThemeMomentumSpec("perp_regime_momo_14_42_top2", market="perpetual", momentum_fast=14, momentum_slow=42, top_n=2, bottom_n=2, long_exposure=0.65, short_exposure=0.35, risk_off_short=True, max_leverage=5.0, risk_off_max_leverage=2.0),
             ThemeMomentumSpec("perp_regime_momo_21_63_top2", market="perpetual", momentum_fast=21, momentum_slow=63, regime_slow=120, top_n=2, bottom_n=2, long_exposure=0.60, short_exposure=0.40, risk_off_short=True, max_leverage=5.0, risk_off_max_leverage=2.0),
         ]
-    raise ValueError("market must be spot or perpetual")
+    if market == "margin":
+        return [
+            ThemeMomentumSpec("margin_regime_momo_7_30_top1", market="margin", momentum_fast=7, momentum_slow=30, top_n=1, bottom_n=1, long_exposure=0.70, short_exposure=0.30, risk_off_short=True, max_leverage=2.0, risk_off_max_leverage=1.0),
+            ThemeMomentumSpec("margin_regime_momo_14_42_top2", market="margin", momentum_fast=14, momentum_slow=42, top_n=2, bottom_n=2, long_exposure=0.65, short_exposure=0.35, risk_off_short=True, max_leverage=2.0, risk_off_max_leverage=1.0),
+            ThemeMomentumSpec("margin_regime_momo_21_63_top2", market="margin", momentum_fast=21, momentum_slow=63, regime_slow=120, top_n=2, bottom_n=2, long_exposure=0.60, short_exposure=0.40, risk_off_short=True, max_leverage=2.0, risk_off_max_leverage=1.0),
+        ]
+    raise ValueError("market must be spot, margin, or perpetual")
 
 
 @dataclass(frozen=True, slots=True)
@@ -340,8 +346,10 @@ class PortfolioConfig:
     slippage_bps: Decimal = Decimal("5")
     spread_bps: Decimal = Decimal("0")
     market_impact_bps: Decimal = Decimal("0")
+    margin_interest_bps_per_day: Decimal = Decimal("0")
     rebalance_every_bars: int = 1
     max_gross_leverage: Decimal = Decimal("1")
+    max_leverage_by_symbol: Mapping[str, Decimal] | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -350,6 +358,7 @@ class PortfolioConfig:
             "slippage_bps",
             "spread_bps",
             "market_impact_bps",
+            "margin_interest_bps_per_day",
             "max_gross_leverage",
         ):
             object.__setattr__(self, name, Decimal(str(getattr(self, name))))
@@ -359,6 +368,16 @@ class PortfolioConfig:
             raise ValueError("rebalance_every_bars must be positive")
         if self.max_gross_leverage <= 0:
             raise ValueError("max_gross_leverage must be positive")
+        if self.margin_interest_bps_per_day < 0:
+            raise ValueError("margin_interest_bps_per_day must not be negative")
+        if self.max_leverage_by_symbol is not None:
+            object.__setattr__(
+                self,
+                "max_leverage_by_symbol",
+                {str(symbol).upper(): Decimal(str(value)) for symbol, value in self.max_leverage_by_symbol.items()},
+            )
+            if any(value <= 0 for value in self.max_leverage_by_symbol.values()):
+                raise ValueError("symbol leverage limits must be positive")
         for name in ("fee_bps", "slippage_bps", "spread_bps", "market_impact_bps"):
             if getattr(self, name) < 0:
                 raise ValueError(f"{name} must not be negative")
@@ -398,6 +417,7 @@ class PortfolioResult:
     gross_exposure_curve: list[tuple[str, float]] = field(default_factory=list)
     decisions: list[dict[str, Any]] = field(default_factory=list)
     funding_cost: Decimal = Decimal("0")
+    financing_cost: Decimal = Decimal("0")
 
 
 def _normalise_universe(universe: Mapping[str, list[OHLCVBar]]) -> tuple[dict[str, list[OHLCVBar]], list[datetime]]:
@@ -422,13 +442,23 @@ def _trade_order(symbol: str, delta: Decimal, current: Decimal) -> tuple[int, st
     return (0 if closing else 1, symbol)
 
 
-def _cap_target_weights(target_weights: Mapping[str, float], max_gross_leverage: Decimal) -> dict[str, float]:
-    gross = sum(abs(weight) for weight in target_weights.values())
+def _cap_target_weights(
+    target_weights: Mapping[str, float],
+    max_gross_leverage: Decimal,
+    max_leverage_by_symbol: Mapping[str, Decimal] | None = None,
+) -> dict[str, float]:
+    capped = {
+        symbol: max(-float(max_leverage_by_symbol[symbol.upper()]), min(float(max_leverage_by_symbol[symbol.upper()]), weight))
+        if max_leverage_by_symbol and symbol.upper() in max_leverage_by_symbol
+        else weight
+        for symbol, weight in target_weights.items()
+    }
+    gross = sum(abs(weight) for weight in capped.values())
     cap = float(max_gross_leverage)
     if gross <= cap or gross == 0:
-        return dict(target_weights)
+        return capped
     scale = cap / gross
-    return {symbol: weight * scale for symbol, weight in target_weights.items()}
+    return {symbol: weight * scale for symbol, weight in capped.items()}
 
 
 def _execute_target(
@@ -500,8 +530,9 @@ def run_portfolio_backtest(
 
     Signals use only each asset's history through the current close. The
     resulting target weights are executed at the next common bar's open.
-    Negative weights are allowed only for perpetual candidates. Funding rates
-    are applied to the position held at the bar timestamp.
+    Negative weights are allowed for margin and perpetual candidates. Funding
+    rates are applied to perpetual positions; margin interest is charged on
+    gross credit positions when configured.
     """
 
     config = config or PortfolioConfig()
@@ -520,6 +551,7 @@ def run_portfolio_backtest(
     decisions: list[dict[str, Any]] = []
     cash = config.initial_cash
     funding_cost = Decimal("0")
+    financing_cost = Decimal("0")
     pending = PortfolioDecision({}, "warmup", 0.0, {})
 
     for index, timestamp in enumerate(timestamps):
@@ -530,6 +562,13 @@ def run_portfolio_backtest(
                 payment = position * current[symbol].open * Decimal(str(rate))
                 cash -= payment
                 funding_cost += payment
+        if index > start_index and strategy.spec.market == "margin" and config.margin_interest_bps_per_day:
+            payment = sum(
+                abs(position * current[symbol].open) * config.margin_interest_bps_per_day / Decimal("10000")
+                for symbol, position in positions.items()
+            )
+            cash -= payment
+            financing_cost += payment
         if index < start_index:
             for symbol in normalised:
                 history[symbol].append(current[symbol])
@@ -543,7 +582,11 @@ def run_portfolio_backtest(
             cash = _execute_target(
                 timestamp=timestamp,
                 current_bars=current,
-                target_weights=_cap_target_weights(pending.target_weights, config.max_gross_leverage),
+                target_weights=_cap_target_weights(
+                    pending.target_weights,
+                    config.max_gross_leverage,
+                    config.max_leverage_by_symbol,
+                ),
                 positions=positions,
                 cash=cash,
                 equity=equity_at_open,
@@ -593,6 +636,7 @@ def run_portfolio_backtest(
         gross_exposure_curve,
         decisions,
         funding_cost,
+        financing_cost,
     )
 
 
@@ -610,6 +654,7 @@ class PortfolioMetrics:
     benchmark_return: float
     excess_return: float
     funding_cost_fraction: float
+    financing_cost_fraction: float
     robust_score: float
 
 
@@ -629,6 +674,7 @@ def evaluate_portfolio_result(result: PortfolioResult) -> PortfolioMetrics:
         else 0.0
     )
     funding_fraction = float(result.funding_cost / result.initial_cash)
+    financing_fraction = float(result.financing_cost / result.initial_cash)
     drawdown = _max_drawdown(strategy_curve)
     return PortfolioMetrics(
         total_return=_safe_float(total_return),
@@ -643,6 +689,7 @@ def evaluate_portfolio_result(result: PortfolioResult) -> PortfolioMetrics:
         benchmark_return=_safe_float(benchmark_return),
         excess_return=_safe_float(total_return - benchmark_return),
         funding_cost_fraction=_safe_float(funding_fraction),
+        financing_cost_fraction=_safe_float(financing_fraction),
         robust_score=_safe_float(total_return - drawdown),
     )
 
@@ -745,14 +792,20 @@ def portfolio_research_report(
     specs: list[ThemeMomentumSpec] | None = None,
     config: PortfolioConfig | None = None,
     funding_rates: Mapping[str, Mapping[datetime, Decimal]] | None = None,
+    max_leverage_by_symbol: Mapping[str, Decimal] | None = None,
     interval: str = "1day",
     train_days: int = 180,
     test_days: int = 60,
     step_days: int = 60,
 ) -> dict[str, Any]:
-    if market not in {"spot", "perpetual"}:
-        raise ValueError("market must be spot or perpetual")
-    config = config or PortfolioConfig(max_gross_leverage=Decimal("1") if market == "spot" else Decimal("5"))
+    if market not in {"spot", "margin", "perpetual"}:
+        raise ValueError("market must be spot, margin, or perpetual")
+    if config is None:
+        config = PortfolioConfig(
+            max_gross_leverage=Decimal("1") if market == "spot" else Decimal("2") if market == "margin" else Decimal("5"),
+            margin_interest_bps_per_day=Decimal("4") if market == "margin" else Decimal("0"),
+            max_leverage_by_symbol=max_leverage_by_symbol,
+        )
     specs = specs or default_theme_specs(market)
     if any(spec.market != market for spec in specs):
         raise ValueError("all strategy specs must match market")
@@ -800,9 +853,11 @@ def portfolio_research_report(
             "signal": "close-only cross-sectional theme proxy; execute target weights at next common bar open",
             "theme_proxy": "relative momentum 45%, short momentum 35%, volume acceleration 20%",
             "regime": "BTC fast/slow trend plus universe breadth",
-            "leverage_policy": "perpetuals scale gross exposure from confidence: risk-on 1x to max 5x, risk-off shorts 0.5x to max 2x; volatility reduces confidence",
+            "leverage_policy": "perpetuals scale gross exposure from confidence: risk-on 1x to max 5x, risk-off shorts 0.5x to max 2x; margin credit scales to max 2x; volatility reduces confidence",
             "market": market,
             "funding_rates_included": bool(funding_rates),
+            "margin_interest_bps_per_day": str(config.margin_interest_bps_per_day),
+            "symbol_leverage_caps": {symbol: str(value) for symbol, value in (config.max_leverage_by_symbol or {}).items()},
             "costs": {
                 "fee_bps": str(config.fee_bps),
                 "slippage_bps": str(config.slippage_bps),

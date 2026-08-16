@@ -42,6 +42,23 @@ jobs:
               --days "${{ inputs.days }}" \
               --output "/tmp/hyperliquid/${symbol}-funding.json"
           done
+      - name: Fetch current HyperLiquid leverage caps
+        run: |
+          python - <<'PY'
+          import json
+          from urllib.request import Request, urlopen
+
+          request = Request(
+              "https://api.hyperliquid.xyz/info",
+              data=json.dumps({"type": "meta"}).encode(),
+              headers={"Content-Type": "application/json"},
+          )
+          with urlopen(request, timeout=30) as response:
+              payload = json.load(response)
+          caps = {item["name"]: item["maxLeverage"] for item in payload["universe"]}
+          with open("/tmp/hyperliquid/leverage-caps.json", "w", encoding="utf-8") as file:
+              json.dump(caps, file, indent=2, sort_keys=True)
+          PY
       - name: Run perpetual research with funding costs
         run: >-
           python -m crypto_simulator portfolio-research
@@ -62,6 +79,7 @@ jobs:
           --spread-bps 10
           --market-impact-bps 5
           --max-gross-leverage 5
+          --max-leverage-map /tmp/hyperliquid/leverage-caps.json
           --output state/hyperliquid-perpetual-portfolio-research.json
       - name: Upload perpetual research report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

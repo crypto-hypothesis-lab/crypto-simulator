@@ -58,9 +58,33 @@ jobs:
           --spread-bps 10
           --market-impact-bps 5
           --output state/bitbank-spot-portfolio-research.json
+      - name: Run Bitbank margin research with short positions
+        run: >-
+          python -m crypto_simulator portfolio-research
+          --market margin
+          --input BTC=/tmp/bitbank/btc_jpy.csv
+          --input ETH=/tmp/bitbank/eth_jpy.csv
+          --input XRP=/tmp/bitbank/xrp_jpy.csv
+          --input DOGE=/tmp/bitbank/doge_jpy.csv
+          --input ADA=/tmp/bitbank/ada_jpy.csv
+          --input LINK=/tmp/bitbank/link_jpy.csv
+          --benchmark-symbol BTC
+          --interval 1day
+          --train-days 180
+          --test-days 60
+          --step-days 60
+          --fee-bps 10
+          --slippage-bps 5
+          --spread-bps 10
+          --market-impact-bps 5
+          --margin-interest-bps-per-day 4
+          --max-gross-leverage 2
+          --output state/bitbank-margin-portfolio-research.json
       - name: Upload spot research report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: bitbank-spot-portfolio-research-${{ github.run_id }}
-          path: state/bitbank-spot-portfolio-research.json
+          name: bitbank-spot-margin-portfolio-research-${{ github.run_id }}
+          path: |
+            state/bitbank-spot-portfolio-research.json
+            state/bitbank-margin-portfolio-research.json
           retention-days: 30

@@ -47,6 +47,21 @@ class SequenceStrategy(ThemeMomentumStrategy):
         return PortfolioDecision({}, "risk_off", 0.0, {"ETH": 0.0})
 
 
+class ShortSequenceStrategy(ThemeMomentumStrategy):
+    def decision(self, history):
+        count = len(history["BTC"])
+        if count == 2:
+            return PortfolioDecision({"ETH": -0.8}, "risk_off", 0.0, {"ETH": 1.0})
+        return PortfolioDecision({}, "risk_off", 0.0, {"ETH": 0.0})
+
+
+class HighWeightStrategy(ThemeMomentumStrategy):
+    def decision(self, history):
+        if len(history["BTC"]) == 2:
+            return PortfolioDecision({"ETH": 4.5}, "risk_on", 1.0, {"ETH": 1.0})
+        return PortfolioDecision({}, "risk_off", 0.0, {"ETH": 0.0})
+
+
 def test_portfolio_backtest_closes_spot_position_when_regime_turns_off() -> None:
     universe = {symbol: series[:5] for symbol, series in make_universe(5).items()}
     strategy = SequenceStrategy(ThemeMomentumSpec("sequence", market="spot", momentum_fast=1, momentum_slow=2, regime_fast=1, regime_slow=2))
@@ -79,6 +94,36 @@ def test_perpetual_funding_is_charged_to_long_positions() -> None:
 
     assert result.funding_cost > 0
     assert result.final_equity < no_funding.final_equity
+
+
+def test_margin_short_is_supported_and_credit_interest_is_charged() -> None:
+    universe = {symbol: series[:6] for symbol, series in make_universe(6).items()}
+    strategy = ShortSequenceStrategy(
+        ThemeMomentumSpec("margin_short", market="margin", momentum_fast=1, momentum_slow=2, regime_fast=1, regime_slow=2, max_leverage=2, risk_off_max_leverage=1)
+    )
+    result = run_portfolio_backtest(
+        universe,
+        strategy,
+        PortfolioConfig(fee_bps=0, slippage_bps=0, margin_interest_bps_per_day=4, max_gross_leverage=2),
+    )
+
+    assert [trade.side for trade in result.trades] == ["sell", "buy"]
+    assert result.financing_cost > 0
+    assert result.positions["ETH"] == 0
+
+
+def test_symbol_leverage_cap_limits_a_three_x_asset() -> None:
+    universe = {symbol: series[:6] for symbol, series in make_universe(6).items()}
+    strategy = HighWeightStrategy(
+        ThemeMomentumSpec("capped", market="perpetual", momentum_fast=1, momentum_slow=2, regime_fast=1, regime_slow=2, max_leverage=5, risk_off_max_leverage=2)
+    )
+    result = run_portfolio_backtest(
+        universe,
+        strategy,
+        PortfolioConfig(fee_bps=0, slippage_bps=0, max_gross_leverage=5, max_leverage_by_symbol={"ETH": 3}),
+    )
+
+    assert max(value for _, value in result.gross_exposure_curve) <= 3.0
 
 
 def test_funding_rates_are_aggregated_to_daily_price_buckets() -> None:

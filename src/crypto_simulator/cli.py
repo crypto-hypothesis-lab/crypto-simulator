@@ -178,8 +178,8 @@ def main() -> None:
     forward.add_argument("--spread-bps", type=Decimal, default=Decimal("0"))
     forward.add_argument("--market-impact-bps", type=Decimal, default=Decimal("0"))
     forward.add_argument("--max-holding-days", type=int, default=30)
-    portfolio = subparsers.add_parser("portfolio-research", help="research regime-aware cross-sectional spot/perpetual strategies")
-    portfolio.add_argument("--market", choices=["spot", "perpetual"], required=True)
+    portfolio = subparsers.add_parser("portfolio-research", help="research regime-aware cross-sectional spot/margin/perpetual strategies")
+    portfolio.add_argument("--market", choices=["spot", "margin", "perpetual"], required=True)
     portfolio.add_argument("--input", dest="inputs", action="append", required=True, metavar="SYMBOL=CSV_PATH")
     portfolio.add_argument("--funding", dest="fundings", action="append", type=Path, help="funding JSON from fetch-funding; repeat per symbol")
     portfolio.add_argument("--benchmark-symbol")
@@ -193,8 +193,10 @@ def main() -> None:
     portfolio.add_argument("--slippage-bps", type=Decimal, default=Decimal("5"))
     portfolio.add_argument("--spread-bps", type=Decimal, default=Decimal("0"))
     portfolio.add_argument("--market-impact-bps", type=Decimal, default=Decimal("0"))
+    portfolio.add_argument("--margin-interest-bps-per-day", type=Decimal)
     portfolio.add_argument("--rebalance-every-bars", type=int, default=1)
     portfolio.add_argument("--max-gross-leverage", type=Decimal)
+    portfolio.add_argument("--max-leverage-map", type=Path, help="JSON object mapping symbols to exchange leverage caps")
     signal = subparsers.add_parser("signal", help="write a paper-trading signal from the latest closed candle")
     signal.add_argument("--input", type=Path, required=True)
     signal.add_argument("--output", type=Path, required=True)
@@ -313,7 +315,19 @@ def main() -> None:
             }
         leverage = args.max_gross_leverage
         if leverage is None:
-            leverage = Decimal("1") if args.market == "spot" else Decimal("5")
+            leverage = Decimal("1") if args.market == "spot" else Decimal("2") if args.market == "margin" else Decimal("5")
+        margin_interest = args.margin_interest_bps_per_day
+        if margin_interest is None:
+            margin_interest = Decimal("4") if args.market == "margin" else Decimal("0")
+        leverage_map = None
+        if args.max_leverage_map:
+            try:
+                payload = json.loads(args.max_leverage_map.read_text(encoding="utf-8"))
+                if not isinstance(payload, dict):
+                    raise ValueError("max leverage map must be a JSON object")
+                leverage_map = {str(symbol): Decimal(str(value)) for symbol, value in payload.items()}
+            except (OSError, json.JSONDecodeError, ValueError) as exc:
+                parser.error(f"invalid --max-leverage-map: {exc}")
         report = portfolio_research_report(
             universe,
             market=args.market,
@@ -329,8 +343,10 @@ def main() -> None:
                 slippage_bps=args.slippage_bps,
                 spread_bps=args.spread_bps,
                 market_impact_bps=args.market_impact_bps,
+                margin_interest_bps_per_day=margin_interest,
                 rebalance_every_bars=args.rebalance_every_bars,
                 max_gross_leverage=leverage,
+                max_leverage_by_symbol=leverage_map,
             ),
         )
         _write_json(args.output, report)
