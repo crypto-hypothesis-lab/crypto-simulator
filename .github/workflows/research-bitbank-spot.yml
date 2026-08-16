@@ -1,4 +1,4 @@
-name: Research bitbank spot portfolio
+name: Research bitbank liquid portfolio
 
 on:
   workflow_dispatch:
@@ -8,18 +8,38 @@ on:
         required: false
         default: "1200"
         type: string
+      max_symbols:
+        description: "Maximum number of liquid JPY pairs"
+        required: false
+        default: "20"
+        type: string
+      min_quote_volume_jpy:
+        description: "Minimum current 24h quote volume in JPY"
+        required: false
+        default: "5000000"
+        type: string
+      max_spread_bps:
+        description: "Maximum current bid/ask spread in basis points"
+        required: false
+        default: "15"
+        type: string
+      min_history_bars:
+        description: "Minimum daily bars required after the history fetch"
+        required: false
+        default: "600"
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: crypto-bitbank-spot-research
+  group: crypto-bitbank-liquid-research
   cancel-in-progress: true
 
 jobs:
   research:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
@@ -27,27 +47,146 @@ jobs:
           python-version: "3.11"
       - name: Install simulator
         run: python -m pip install .
-      - name: Fetch fixed spot universe
+      - name: Select current liquid JPY universe
+        env:
+          MAX_SYMBOLS: "${{ inputs.max_symbols }}"
+          MIN_QUOTE_VOLUME_JPY: "${{ inputs.min_quote_volume_jpy }}"
+          MAX_SPREAD_BPS: "${{ inputs.max_spread_bps }}"
         run: |
-          mkdir -p /tmp/bitbank
-          for symbol in btc_jpy eth_jpy xrp_jpy doge_jpy ada_jpy link_jpy; do
+          python - <<'PY'
+          import json
+          import os
+          from decimal import Decimal, InvalidOperation
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+
+          max_symbols = int(os.environ["MAX_SYMBOLS"])
+          min_quote_volume = Decimal(os.environ["MIN_QUOTE_VOLUME_JPY"])
+          max_spread = Decimal(os.environ["MAX_SPREAD_BPS"]) / Decimal("10000")
+          request = Request(
+              "https://public.bitbank.cc/tickers_jpy",
+              headers={"Accept": "application/json", "User-Agent": "crypto-simulator-research"},
+          )
+          with urlopen(request, timeout=30) as response:
+              payload = json.load(response)
+          if payload.get("success") != 1:
+              raise RuntimeError(f"bitbank ticker request failed: {payload}")
+
+          candidates = []
+          for item in payload.get("data", []):
+              try:
+                  pair = str(item["pair"]).lower()
+                  last = Decimal(str(item["last"]))
+                  buy = Decimal(str(item["buy"]))
+                  sell = Decimal(str(item["sell"]))
+                  base_volume = Decimal(str(item["vol"]))
+              except (KeyError, TypeError, ValueError, InvalidOperation):
+                  continue
+              quote_volume = last * base_volume
+              spread = max((sell - buy) / last, Decimal("0")) if last > 0 else Decimal("999")
+              if quote_volume >= min_quote_volume and spread <= max_spread:
+                  candidates.append(
+                      {
+                          "pair": pair,
+                          "quote_volume_jpy": str(quote_volume),
+                          "spread_fraction": str(spread),
+                      }
+                  )
+
+          candidates.sort(key=lambda item: (Decimal(item["quote_volume_jpy"]), item["pair"]), reverse=True)
+          candidates = candidates[:max_symbols]
+          if not any(item["pair"] == "btc_jpy" for item in candidates):
+              raise RuntimeError("BTC/JPY did not pass the liquidity filter; refusing to run without a benchmark")
+          candidates.sort(key=lambda item: (item["pair"] != "btc_jpy", -Decimal(item["quote_volume_jpy"])))
+
+          output_dir = Path("/tmp/bitbank")
+          output_dir.mkdir(parents=True, exist_ok=True)
+          manifest = {
+              "selection_basis": "current Bitbank JPY ticker snapshot",
+              "min_quote_volume_jpy": str(min_quote_volume),
+              "max_spread_bps": str(Decimal(os.environ["MAX_SPREAD_BPS"])),
+              "max_symbols": max_symbols,
+              "symbols": candidates,
+              "research_only": True,
+          }
+          manifest_text = json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
+          (output_dir / "liquid-universe.json").write_text(manifest_text, encoding="utf-8")
+          Path("state").mkdir(parents=True, exist_ok=True)
+          Path("state/bitbank-liquid-universe.json").write_text(manifest_text, encoding="utf-8")
+
+          pairs = [item["pair"] for item in candidates]
+          input_args = []
+          for item in candidates:
+              symbol = item["pair"].removesuffix("_jpy").upper()
+              input_args.extend(["--input", f"{symbol}={output_dir / (item['pair'] + '.csv')}"])
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
+              env_file.write(f"BITBANK_PAIRS={' '.join(pairs)}\n")
+              env_file.write(f"BITBANK_INPUT_ARGS={' '.join(input_args)}\n")
+          print("selected_pairs=" + ",".join(pairs))
+          PY
+      - name: Fetch liquid universe history
+        run: |
+          for pair in $BITBANK_PAIRS; do
             python -m crypto_simulator fetch \
               --exchange bitbank \
-              --symbol "$symbol" \
+              --symbol "$pair" \
               --interval 1day \
               --days "${{ inputs.days }}" \
-              --output "/tmp/bitbank/${symbol}.csv"
+              --output "/tmp/bitbank/${pair}.csv"
           done
+      - name: Keep symbols with sufficient history and rebuild arguments
+        env:
+          MIN_HISTORY_BARS: "${{ inputs.min_history_bars }}"
+        run: |
+          python - <<'PY'
+          import csv
+          import json
+          import os
+          from pathlib import Path
+
+          manifest_path = Path("/tmp/bitbank/liquid-universe.json")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          minimum = int(os.environ["MIN_HISTORY_BARS"])
+          eligible = []
+          rejected = []
+          for item in manifest["symbols"]:
+              pair = item["pair"]
+              path = Path("/tmp/bitbank") / f"{pair}.csv"
+              try:
+                  with path.open(newline="", encoding="utf-8") as file:
+                      bars = sum(1 for _ in csv.DictReader(file))
+              except FileNotFoundError:
+                  bars = 0
+              if bars >= minimum:
+                  item["history_bars"] = bars
+                  eligible.append(item)
+              else:
+                  rejected.append({"pair": pair, "history_bars": bars, "reason": "insufficient_history"})
+          if not any(item["pair"] == "btc_jpy" for item in eligible):
+              raise RuntimeError("BTC/JPY did not have enough history after fetching")
+          manifest["min_history_bars"] = minimum
+          manifest["eligible_symbols"] = eligible
+          manifest["rejected_symbols"] = rejected
+          manifest_text = json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
+          manifest_path.write_text(manifest_text, encoding="utf-8")
+          Path("state/bitbank-liquid-universe.json").write_text(manifest_text, encoding="utf-8")
+
+          pairs = [item["pair"] for item in eligible]
+          input_args = []
+          for item in eligible:
+              symbol = item["pair"].removesuffix("_jpy").upper()
+              input_args.extend(["--input", f"{symbol}=/tmp/bitbank/{item['pair']}.csv"])
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
+              env_file.write(f"BITBANK_PAIRS={' '.join(pairs)}\n")
+              env_file.write(f"BITBANK_INPUT_ARGS={' '.join(input_args)}\n")
+          print("eligible_pairs=" + ",".join(pairs))
+          print("rejected_pairs=" + ",".join(item["pair"] for item in rejected))
+          PY
       - name: Run spot research
         run: >-
           python -m crypto_simulator portfolio-research
           --market spot
-          --input BTC=/tmp/bitbank/btc_jpy.csv
-          --input ETH=/tmp/bitbank/eth_jpy.csv
-          --input XRP=/tmp/bitbank/xrp_jpy.csv
-          --input DOGE=/tmp/bitbank/doge_jpy.csv
-          --input ADA=/tmp/bitbank/ada_jpy.csv
-          --input LINK=/tmp/bitbank/link_jpy.csv
+          $BITBANK_INPUT_ARGS
           --benchmark-symbol BTC
           --interval 1day
           --train-days 180
@@ -57,17 +196,12 @@ jobs:
           --slippage-bps 5
           --spread-bps 10
           --market-impact-bps 5
-          --output state/bitbank-spot-portfolio-research.json
+          --output state/bitbank-liquid-spot-portfolio-research.json
       - name: Run Bitbank margin research with short positions
         run: >-
           python -m crypto_simulator portfolio-research
           --market margin
-          --input BTC=/tmp/bitbank/btc_jpy.csv
-          --input ETH=/tmp/bitbank/eth_jpy.csv
-          --input XRP=/tmp/bitbank/xrp_jpy.csv
-          --input DOGE=/tmp/bitbank/doge_jpy.csv
-          --input ADA=/tmp/bitbank/ada_jpy.csv
-          --input LINK=/tmp/bitbank/link_jpy.csv
+          $BITBANK_INPUT_ARGS
           --benchmark-symbol BTC
           --interval 1day
           --train-days 180
@@ -79,12 +213,13 @@ jobs:
           --market-impact-bps 5
           --margin-interest-bps-per-day 4
           --max-gross-leverage 2
-          --output state/bitbank-margin-portfolio-research.json
-      - name: Upload spot research report
+          --output state/bitbank-liquid-margin-portfolio-research.json
+      - name: Upload liquid-universe research report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: bitbank-spot-margin-portfolio-research-${{ github.run_id }}
+          name: bitbank-liquid-portfolio-research-${{ github.run_id }}
           path: |
-            state/bitbank-spot-portfolio-research.json
-            state/bitbank-margin-portfolio-research.json
+            state/bitbank-liquid-universe.json
+            state/bitbank-liquid-spot-portfolio-research.json
+            state/bitbank-liquid-margin-portfolio-research.json
           retention-days: 30

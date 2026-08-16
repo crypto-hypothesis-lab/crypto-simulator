@@ -22,6 +22,14 @@ class FakeClient:
         return self.response
 
 
+class MissingYearClient(FakeClient):
+    def get(self, url):
+        self.urls.append(url)
+        if url.endswith("/2023"):
+            raise PublicApiError("public API request failed: GET url: HTTP Error 404: Not Found")
+        return {"success": 1, "data": {"candlestick": [{"type": "1day", "ohlcv": [["1", "2", "0.5", "1.5", "3", 1_700_000_000_000]]}]}}
+
+
 def test_hyperliquid_candle_shape_is_normalized() -> None:
     client = FakeClient([{"t": 1_700_000_000_000, "o": "1", "h": "2", "l": "0.5", "c": "1.5", "v": "3"}])
     bars = HyperliquidAdapter(client).fetch_ohlcv("BTC", "1h")
@@ -64,6 +72,20 @@ def test_bitbank_candle_shape_is_normalized() -> None:
     bars = BitbankAdapter(client).fetch_ohlcv("btc_jpy", "1hour", start=datetime.fromtimestamp(1_699_999_000, timezone.utc), end=datetime.fromtimestamp(1_700_001_000, timezone.utc))
     assert bars[0].symbol == "btc_jpy"
     assert bars[0].market_type == "spot"
+
+
+def test_bitbank_skips_unlisted_years_but_keeps_available_history() -> None:
+    client = MissingYearClient(None)
+    bars = BitbankAdapter(client).fetch_ohlcv(
+        "sol_jpy",
+        "1day",
+        start=datetime(2023, 1, 1, tzinfo=timezone.utc),
+        end=datetime(2024, 1, 2, tzinfo=timezone.utc),
+    )
+
+    assert len(bars) == 1
+    assert any(url.endswith("/2023") for url in client.urls)
+    assert any(url.endswith("/2024") for url in client.urls)
 
 
 def test_gmo_maintenance_is_fail_closed() -> None:

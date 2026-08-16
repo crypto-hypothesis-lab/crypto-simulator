@@ -103,12 +103,12 @@ cannot create reported trades. The JSON is deliberately marked
 `forward_test_only`/`manual_review_required`: it is evidence for a paper-trading
 decision, not an automatic promotion or live-order instruction.
 
-`portfolio-research` evaluates a small fixed universe with a BTC trend/breadth
-regime gate. Its theme proxy is deliberately data-driven: relative momentum,
-short momentum, and volume acceleration. Spot candidates can only hold positive
-weights or cash. Margin candidates model Bitbank credit trading: signed
-long/short weights, a 2x cap, and 0.04%/day financing as a conservative
-assumption. Perpetual candidates can hold signed weights and short in
+`portfolio-research` accepts any number of synchronized asset series and uses a
+BTC trend/breadth regime gate. Its theme proxy is deliberately data-driven:
+relative momentum, short momentum, and volume acceleration. Spot candidates can
+only hold positive weights or cash. Margin candidates model Bitbank credit
+trading: signed long/short weights, a 2x cap, and 0.04%/day financing as a
+conservative assumption. Perpetual candidates can hold signed weights and short in
 risk-off regimes. Perpetual gross exposure is confidence-scaled: risk-on
 exposure ranges from 1x toward a 5x cap, while risk-off short exposure is capped
 at 2x; strong trends and breadth increase confidence, while realized volatility
@@ -128,12 +128,16 @@ frozen execution SMA and holdout length, applies explicit spread and market
 impact assumptions, and uploads only the forward-test JSON artifact. It does
 not select or promote a strategy automatically.
 
-The `Research bitbank spot portfolio` workflow also runs a Bitbank margin
-variant with short positions and the documented 0.04%/day credit-interest
-assumption. The `Research HyperLiquid perpetual portfolio` workflow fetches
-current public per-asset leverage caps before testing. Both workflows are
-manual, cost-aware, report-only research, and do not store raw market data in
-Git.
+The `Research bitbank liquid portfolio` workflow selects current JPY pairs by
+24-hour quote volume and bid/ask spread, removes pairs without enough daily
+history, then runs both spot and Bitbank-margin variants over that broader
+universe. The `Research HyperLiquid liquid perpetual portfolio` workflow selects
+current perpetuals by notional volume, removes symbols without enough daily
+history, fetches funding for each remaining symbol, and applies the current
+per-asset leverage caps. Both workflows are manual, cost-aware, report-only
+research and upload the selection manifest with the result. The selection is a
+current-liquidity snapshot, not point-in-time historical constituents, so its
+result is exploratory and must not be promoted to live trading automatically.
 
 CCXT is available as a public-data-only adapter for supported venues. It does
 not accept API keys and exposes no order or withdrawal methods:

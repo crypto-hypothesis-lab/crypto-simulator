@@ -34,7 +34,17 @@ class BitbankAdapter:
         for requested_date in dates:
             date_text = requested_date.strftime("%Y%m%d") if interval in {"1min", "5min", "15min", "30min", "1hour"} else requested_date.strftime("%Y")
             url = f"{self.endpoint}/{quote(symbol.lower())}/candlestick/{interval}/{date_text}"
-            response = self.client.get(url)
+            try:
+                response = self.client.get(url)
+            except PublicApiError as error:
+                # Bitbank returns HTTP 404 for a year before a pair was listed
+                # (and sometimes after it was delisted).  That is expected for
+                # a broad universe; keep the available history instead of
+                # discarding the whole symbol.  Other failures remain fatal so
+                # a partial API outage cannot silently look like clean data.
+                if "HTTP Error 404" in str(error):
+                    continue
+                raise
             if not isinstance(response, dict) or response.get("success") != 1:
                 raise PublicApiError(f"bitbank returned an error for {symbol} {interval} {date_text}: {response}")
             data = response.get("data", {}) if isinstance(response, dict) else {}
