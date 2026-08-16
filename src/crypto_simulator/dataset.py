@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import csv
+import json
 import os
 import tempfile
 from datetime import datetime
 from pathlib import Path
 
 from .models import OHLCVBar
+from .portfolio import FundingPoint
 
 
 CSV_FIELDS = [
@@ -89,3 +91,38 @@ def merge_ohlcv_csv(path: str | Path, new_bars: list[OHLCVBar]) -> tuple[int, in
     if new_bars or not Path(path).exists():
         write_ohlcv_csv(path, merged_bars)
     return len(merged) - before, len(merged)
+
+
+def write_funding_json(path: str | Path, points: list[FundingPoint]) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = [
+        {
+            "exchange": point.exchange,
+            "symbol": point.symbol,
+            "timestamp": point.timestamp.isoformat(),
+            "rate": str(point.rate),
+            "premium": str(point.premium) if point.premium is not None else None,
+        }
+        for point in sorted(points, key=lambda item: (item.timestamp, item.symbol))
+    ]
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def load_funding_json(path: str | Path) -> list[FundingPoint]:
+    path = Path(path)
+    if not path.exists():
+        return []
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        raise ValueError("funding JSON must contain a list")
+    return [
+        FundingPoint(
+            exchange=item["exchange"],
+            symbol=item["symbol"],
+            timestamp=datetime.fromisoformat(item["timestamp"]),
+            rate=item["rate"],
+            premium=item.get("premium"),
+        )
+        for item in payload
+    ]

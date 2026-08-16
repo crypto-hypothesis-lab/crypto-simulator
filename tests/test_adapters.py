@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from crypto_simulator.adapters.binance import BinanceAdapter
 from crypto_simulator.adapters.bitbank import BitbankAdapter
@@ -27,6 +28,22 @@ def test_hyperliquid_candle_shape_is_normalized() -> None:
     assert len(bars) == 1
     assert bars[0].market_type == "perpetual"
     assert client.urls[0][1]["type"] == "candleSnapshot"
+
+
+def test_hyperliquid_funding_shape_is_normalized() -> None:
+    client = FakeClient(
+        [
+            {"coin": "BTC", "fundingRate": "0.0001", "premium": "0.0002", "time": 1_700_000_000_000},
+        ]
+    )
+    start = datetime.fromtimestamp(1_699_999_000, timezone.utc)
+    end = datetime.fromtimestamp(1_700_001_000, timezone.utc)
+    points = HyperliquidAdapter(client).fetch_funding("BTC", start=start, end=end)
+
+    assert len(points) == 1
+    assert points[0].symbol == "BTC"
+    assert points[0].rate == Decimal("0.0001")
+    assert client.urls[0][1]["type"] == "fundingHistory"
 
 
 def test_binance_kline_shape_is_normalized() -> None:

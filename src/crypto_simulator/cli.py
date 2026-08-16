@@ -3,14 +3,16 @@ from __future__ import annotations
 import argparse
 import json
 import math
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
 from .adapters import BinanceAdapter, BitbankAdapter, CcxtPublicAdapter, GmoCoinAdapter, HyperliquidAdapter
 from .backtest import BacktestConfig, run_backtest
-from .dataset import load_ohlcv_csv, merge_ohlcv_csv, write_ohlcv_csv
+from .dataset import load_funding_json, load_ohlcv_csv, merge_ohlcv_csv, write_funding_json, write_ohlcv_csv
 from .models import OHLCVBar
+from .portfolio import PortfolioConfig, default_theme_specs, funding_rates_by_interval, portfolio_research_report
 from .research import StrategySpec, forward_test_report, research_report
 from .signals import build_signal_event
 from .strategy import MultiTimeframeStrategy, SmaCrossStrategy
@@ -87,6 +89,15 @@ def _parse_utc_datetime(value: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def _parse_portfolio_input(value: str) -> tuple[str, Path]:
+    if "=" not in value:
+        raise ValueError("portfolio --input must use SYMBOL=CSV_PATH")
+    symbol, path = value.split("=", 1)
+    if not symbol or not path:
+        raise ValueError("portfolio --input must use SYMBOL=CSV_PATH")
+    return symbol, Path(path)
+
+
 def _resolve_window(args: argparse.Namespace) -> tuple[datetime, datetime]:
     relative = [value for value in (args.hours, args.days) if value is not None]
     if len(relative) > 1:
@@ -121,6 +132,11 @@ def main() -> None:
     fetch.add_argument("--interval", required=True)
     _add_window_arguments(fetch)
     fetch.add_argument("--output", type=Path, required=True)
+    fetch_funding = subparsers.add_parser("fetch-funding", help="fetch public HyperLiquid perpetual funding history")
+    fetch_funding.add_argument("--exchange", choices=["hyperliquid"], default="hyperliquid")
+    fetch_funding.add_argument("--symbol", required=True)
+    _add_window_arguments(fetch_funding)
+    fetch_funding.add_argument("--output", type=Path, required=True)
     collect = subparsers.add_parser("collect", help="fetch and merge a rolling public dataset")
     collect.add_argument("--exchange", choices=["binance", "hyperliquid", "bitbank", "gmo", "ccxt"], default="bitbank")
     collect.add_argument("--ccxt-id")
@@ -162,6 +178,23 @@ def main() -> None:
     forward.add_argument("--spread-bps", type=Decimal, default=Decimal("0"))
     forward.add_argument("--market-impact-bps", type=Decimal, default=Decimal("0"))
     forward.add_argument("--max-holding-days", type=int, default=30)
+    portfolio = subparsers.add_parser("portfolio-research", help="research regime-aware cross-sectional spot/perpetual strategies")
+    portfolio.add_argument("--market", choices=["spot", "perpetual"], required=True)
+    portfolio.add_argument("--input", dest="inputs", action="append", required=True, metavar="SYMBOL=CSV_PATH")
+    portfolio.add_argument("--funding", dest="fundings", action="append", type=Path, help="funding JSON from fetch-funding; repeat per symbol")
+    portfolio.add_argument("--benchmark-symbol")
+    portfolio.add_argument("--output", type=Path, default=Path("state/portfolio-strategy-search.json"))
+    portfolio.add_argument("--interval", default="1day")
+    portfolio.add_argument("--train-days", type=int, default=180)
+    portfolio.add_argument("--test-days", type=int, default=60)
+    portfolio.add_argument("--step-days", type=int, default=60)
+    portfolio.add_argument("--initial-cash", type=Decimal, default=Decimal("100000"))
+    portfolio.add_argument("--fee-bps", type=Decimal, default=Decimal("10"))
+    portfolio.add_argument("--slippage-bps", type=Decimal, default=Decimal("5"))
+    portfolio.add_argument("--spread-bps", type=Decimal, default=Decimal("0"))
+    portfolio.add_argument("--market-impact-bps", type=Decimal, default=Decimal("0"))
+    portfolio.add_argument("--rebalance-every-bars", type=int, default=1)
+    portfolio.add_argument("--max-gross-leverage", type=Decimal)
     signal = subparsers.add_parser("signal", help="write a paper-trading signal from the latest closed candle")
     signal.add_argument("--input", type=Path, required=True)
     signal.add_argument("--output", type=Path, required=True)
@@ -260,6 +293,54 @@ def main() -> None:
         )
         return
 
+    if args.command == "portfolio-research":
+        try:
+            parsed_inputs = [_parse_portfolio_input(value) for value in args.inputs]
+        except ValueError as exc:
+            parser.error(str(exc))
+        universe = {symbol: load_ohlcv_csv(path) for symbol, path in parsed_inputs}
+        specs = default_theme_specs(args.market)
+        if args.benchmark_symbol:
+            specs = [replace(spec, benchmark_symbol=args.benchmark_symbol) for spec in specs]
+        funding_rates = None
+        if args.fundings:
+            points = [point for path in args.fundings for point in load_funding_json(path)]
+            funding_rates = funding_rates_by_interval(points, args.interval)
+            aliases = {symbol.upper(): symbol for symbol in universe}
+            funding_rates = {
+                aliases.get(symbol.upper(), symbol): rates
+                for symbol, rates in funding_rates.items()
+            }
+        leverage = args.max_gross_leverage
+        if leverage is None:
+            leverage = Decimal("1") if args.market == "spot" else Decimal("1.5")
+        report = portfolio_research_report(
+            universe,
+            market=args.market,
+            specs=specs,
+            funding_rates=funding_rates,
+            interval=args.interval,
+            train_days=args.train_days,
+            test_days=args.test_days,
+            step_days=args.step_days,
+            config=PortfolioConfig(
+                initial_cash=args.initial_cash,
+                fee_bps=args.fee_bps,
+                slippage_bps=args.slippage_bps,
+                spread_bps=args.spread_bps,
+                market_impact_bps=args.market_impact_bps,
+                rebalance_every_bars=args.rebalance_every_bars,
+                max_gross_leverage=leverage,
+            ),
+        )
+        _write_json(args.output, report)
+        summary = report["summary"]
+        print(
+            f"saved={args.output} market={args.market} candidates={summary['candidate_count']} "
+            f"walk_forward_windows={summary['walk_forward_windows']} status={summary['status']}"
+        )
+        return
+
     if args.command == "signal":
         event = build_signal_event(
             load_ohlcv_csv(args.input),
@@ -274,6 +355,16 @@ def main() -> None:
         )
         _write_json(args.output, event)
         print(f"saved={args.output} action={event['action']} timestamp={event['timestamp']}")
+        return
+
+    if args.command == "fetch-funding":
+        try:
+            start, end = _resolve_window(args)
+        except ValueError as exc:
+            parser.error(str(exc))
+        points = HyperliquidAdapter().fetch_funding(args.symbol, start=start, end=end)
+        write_funding_json(args.output, points)
+        print(f"saved={args.output} points={len(points)}")
         return
 
     if args.command == "duckdb-import":

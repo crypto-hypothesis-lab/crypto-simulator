@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from ..models import OHLCVBar
+from ..portfolio import FundingPoint
 from .http import JsonHttpClient
 
 
@@ -71,3 +72,51 @@ class HyperliquidAdapter:
                 )
             )
         return sorted(bars, key=lambda bar: bar.timestamp)
+
+    def fetch_funding(
+        self,
+        symbol: str,
+        *,
+        start: datetime,
+        end: datetime | None = None,
+    ) -> list[FundingPoint]:
+        """Fetch public hourly perpetual funding with pagination.
+
+        HyperLiquid returns a bounded time-range response. Advancing from the
+        last returned timestamp keeps long research windows complete without
+        relying on private account data.
+        """
+
+        end = (end or datetime.now(timezone.utc)).astimezone(timezone.utc)
+        cursor = start.astimezone(timezone.utc)
+        if cursor >= end:
+            raise ValueError("start must be earlier than end")
+        points: dict[int, FundingPoint] = {}
+        while cursor < end:
+            payload = {
+                "type": "fundingHistory",
+                "coin": symbol.upper(),
+                "startTime": int(cursor.timestamp() * 1000),
+                "endTime": int(end.timestamp() * 1000),
+            }
+            response = self.client.post(self.endpoint, payload)
+            if not isinstance(response, list):
+                raise ValueError("unexpected Hyperliquid funding response")
+            for item in response:
+                timestamp = datetime.fromtimestamp(int(item["time"]) / 1000, tz=timezone.utc)
+                if start <= timestamp <= end:
+                    point = FundingPoint(
+                        exchange=self.exchange,
+                        symbol=symbol.upper(),
+                        timestamp=timestamp,
+                        rate=item["fundingRate"],
+                        premium=item.get("premium"),
+                    )
+                    points[point.timestamp_ms] = point
+            if len(response) < 500:
+                break
+            last_timestamp = max(int(item["time"]) for item in response)
+            if last_timestamp < int(cursor.timestamp() * 1000):
+                break
+            cursor = datetime.fromtimestamp((last_timestamp + 1) / 1000, tz=timezone.utc)
+        return [points[key] for key in sorted(points)]

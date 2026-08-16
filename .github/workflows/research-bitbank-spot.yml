@@ -1,0 +1,66 @@
+name: Research bitbank spot portfolio
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Historical lookback in days"
+        required: false
+        default: "1200"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crypto-bitbank-spot-research
+  cancel-in-progress: true
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - name: Install simulator
+        run: python -m pip install .
+      - name: Fetch fixed spot universe
+        run: |
+          mkdir -p /tmp/bitbank
+          for symbol in btc_jpy eth_jpy xrp_jpy doge_jpy ada_jpy link_jpy; do
+            python -m crypto_simulator fetch \
+              --exchange bitbank \
+              --symbol "$symbol" \
+              --interval 1day \
+              --days "${{ inputs.days }}" \
+              --output "/tmp/bitbank/${symbol}.csv"
+          done
+      - name: Run spot research
+        run: >-
+          python -m crypto_simulator portfolio-research
+          --market spot
+          --input BTC=/tmp/bitbank/btc_jpy.csv
+          --input ETH=/tmp/bitbank/eth_jpy.csv
+          --input XRP=/tmp/bitbank/xrp_jpy.csv
+          --input DOGE=/tmp/bitbank/doge_jpy.csv
+          --input ADA=/tmp/bitbank/ada_jpy.csv
+          --input LINK=/tmp/bitbank/link_jpy.csv
+          --benchmark-symbol BTC
+          --interval 1day
+          --train-days 180
+          --test-days 60
+          --step-days 60
+          --fee-bps 10
+          --slippage-bps 5
+          --spread-bps 10
+          --market-impact-bps 5
+          --output state/bitbank-spot-portfolio-research.json
+      - name: Upload spot research report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bitbank-spot-portfolio-research-${{ github.run_id }}
+          path: state/bitbank-spot-portfolio-research.json
+          retention-days: 30

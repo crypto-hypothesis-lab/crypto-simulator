@@ -10,6 +10,8 @@ This repository is intentionally safe to publish. It contains no API keys, priva
 - One normalized `OHLCVBar` model with UTC timestamps and decimal prices.
 - A no-lookahead long-only multi-timeframe SMA backtester.
 - A three-layer decision model: 1-hour execution, 4-hour trend filter, and 1-day regime filter.
+- A regime-aware cross-sectional portfolio researcher for spot long-only and
+  perpetual long/short markets.
 - A rolling CSV collector that merges candles without duplicates.
 - Backtest reports and deterministic paper-signal JSON output.
 - A frozen forward-test report for the latest holdout window, including trades,
@@ -65,6 +67,7 @@ python -m crypto_simulator collect --exchange bitbank --symbol btc_jpy --interva
 python -m crypto_simulator backtest --input data/bitbank_btc_jpy_1hour.csv
 python -m crypto_simulator research --input data/bitbank_btc_jpy_1hour.csv --output state/strategy-search.json
 python -m crypto_simulator forward-test --input data/bitbank_btc_jpy_1hour.csv --holdout-days 30 --output state/forward-test.json
+python -m crypto_simulator portfolio-research --market spot --input BTC=data/btc_jpy_1day.csv --input ETH=data/eth_jpy_1day.csv --input XRP=data/xrp_jpy_1day.csv --output state/spot-portfolio-search.json
 python -m crypto_simulator signal --input data/bitbank_btc_jpy_1hour.csv --interval 1hour --output state/latest-signal.json
 # For a baseline comparison only:
 python -m crypto_simulator signal --single-timeframe --input data/bitbank_btc_jpy_1hour.csv --interval 1hour --output state/latest-signal.json
@@ -99,6 +102,14 @@ cannot create reported trades. The JSON is deliberately marked
 `forward_test_only`/`manual_review_required`: it is evidence for a paper-trading
 decision, not an automatic promotion or live-order instruction.
 
+`portfolio-research` evaluates a small fixed universe with a BTC trend/breadth
+regime gate. Its theme proxy is deliberately data-driven: relative momentum,
+short momentum, and volume acceleration. Spot candidates can only hold positive
+weights or cash. Perpetual candidates can hold signed weights and short in
+risk-off regimes. HyperLiquid funding observations can be passed as JSON and
+are aggregated into the selected price-bar interval before charging the
+portfolio.
+
 The `Research Binance BTC/USDT` workflow can be started manually from GitHub
 Actions. It downloads public history, runs the fixed-candidate walk-forward
 research, and uploads only the JSON report as a 30-day artifact; the raw price
@@ -108,6 +119,11 @@ The `Forward test Binance BTC/USDT` workflow is also manual. It accepts a
 frozen execution SMA and holdout length, applies explicit spread and market
 impact assumptions, and uploads only the forward-test JSON artifact. It does
 not select or promote a strategy automatically.
+
+The `Research bitbank spot portfolio` and `Research HyperLiquid perpetual
+portfolio` workflows are manual for now. They fetch a fixed universe, run
+cost-aware walk-forward research, and upload only the JSON report. They are not
+live trading workflows and do not store raw market data in Git.
 
 CCXT is available as a public-data-only adapter for supported venues. It does
 not accept API keys and exposes no order or withdrawal methods:
@@ -123,6 +139,7 @@ only requests `contents: write` because it commits the public candle dataset.
 ## Exchange notes
 
 - Hyperliquid returns its most recent candle snapshot through the public `info` endpoint.
+- HyperLiquid perpetual funding is fetched from the public `fundingHistory` endpoint and is charged hourly before aggregation to the research interval.
 - Binance exposes paginated public klines, so the adapter pages by open time and deduplicates by timestamp.
 - bitbank and GMO Coin expose date-partitioned public candlestick endpoints, so the adapters request each required UTC date and deduplicate bars.
 - Providers are not interchangeable price series. The normalized record retains the source exchange and symbol so cross-venue studies cannot silently mix them.
