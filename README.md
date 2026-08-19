@@ -12,6 +12,12 @@ This repository is intentionally safe to publish. It contains no API keys, priva
 - A three-layer decision model: 1-hour execution, 4-hour trend filter, and 1-day regime filter.
 - A regime-aware cross-sectional portfolio researcher for spot long-only,
   Bitbank-style margin long/short, and perpetual long/short markets.
+- A limit-entry bracket researcher: daily regime, 4-hour theme/trend, and
+  1-hour execution with a finite pullback limit order, ATR stop, R-multiple
+  take-profit, order expiry, and a hard 30-day maximum holding period.
+- A separate short-only spike-fade researcher: detect an abnormal pump,
+  require rejection confirmation, then enter at the next bar open with ATR
+  stops, targets, time stops, funding/credit costs, and walk-forward reporting.
 - A rolling CSV collector that merges candles without duplicates.
 - Backtest reports and deterministic paper-signal JSON output.
 - A frozen forward-test report for the latest holdout window, including trades,
@@ -69,6 +75,9 @@ python -m crypto_simulator research --input data/bitbank_btc_jpy_1hour.csv --out
 python -m crypto_simulator forward-test --input data/bitbank_btc_jpy_1hour.csv --holdout-days 30 --output state/forward-test.json
 python -m crypto_simulator portfolio-research --market spot --input BTC=data/btc_jpy_1day.csv --input ETH=data/eth_jpy_1day.csv --input XRP=data/xrp_jpy_1day.csv --output state/spot-portfolio-search.json
 python -m crypto_simulator portfolio-research --market margin --input BTC=data/btc_jpy_1day.csv --input ETH=data/eth_jpy_1day.csv --input XRP=data/xrp_jpy_1day.csv --margin-interest-bps-per-day 4 --max-gross-leverage 2 --output state/bitbank-margin-portfolio-search.json
+python -m crypto_simulator spike-fade-research --market perpetual --input BTC=data/btc_4hour.csv --input ETH=data/eth_4hour.csv --input SOL=data/sol_4hour.csv --output state/hyperliquid-spike-fade-search.json
+python -m crypto_simulator limit-bracket-research --market perpetual --interval 1hour --input BTC=data/btc_1hour.csv --input ETH=data/eth_1hour.csv --input SOL=data/sol_1hour.csv --input XRP=data/xrp_1hour.csv --output state/hyperliquid-limit-bracket-search.json
+python -m crypto_simulator limit-bracket-signal --market perpetual --interval 1hour --profile balanced --input BTC=data/btc_1hour.csv --input ETH=data/eth_1hour.csv --input SOL=data/sol_1hour.csv --input XRP=data/xrp_1hour.csv --output state/latest-bracket-signal.json
 python -m crypto_simulator signal --input data/bitbank_btc_jpy_1hour.csv --interval 1hour --output state/latest-signal.json
 # For a baseline comparison only:
 python -m crypto_simulator signal --single-timeframe --input data/bitbank_btc_jpy_1hour.csv --interval 1hour --output state/latest-signal.json
@@ -138,6 +147,58 @@ per-asset leverage caps. Both workflows are manual, cost-aware, report-only
 research and upload the selection manifest with the result. The selection is a
 current-liquidity snapshot, not point-in-time historical constituents, so its
 result is exploratory and must not be promoted to live trading automatically.
+
+`spike-fade-research` is intentionally a separate hypothesis from momentum:
+it detects a large return/ATR and volume excursion, waits for a rejection of
+the pump range, and then shorts at the next common bar open. It uses a
+stop-first rule when a stop and target are both touched in one bar, a maximum
+holding period, and a small fixed risk budget per trade. The default research
+interval is 4-hour because daily candles are too coarse for this event. A
+positive full-sample return is not sufficient; the report also requires
+positive out-of-sample return and excess return across the walk-forward windows
+before it can be considered a candidate for forward testing.
+
+`limit-bracket-research` models a resting parent limit order rather than a
+next-bar market entry. The signal is formed only after a closed execution
+candle breaks out in the direction supported by the 4-hour trend and 1-day
+regime. A long order is placed below the signal close and a short order above
+it; there is no market-order fallback. The order can fill at its limit or at a
+better opening-gap price, then receives a protective ATR stop trigger and an
+R-multiple take-profit limit. An unfilled order expires, a regime reversal
+cancels it, and a bar that touches both exit levels is scored as a stop first.
+The report includes limit fill rate, cancellations, stop/target/time-stop
+counts, and average holding days so an attractive return cannot hide poor
+execution.
+
+The default bracket candidates use 7, 14, and 30-day holding caps. The
+30-day candidate is a hard ceiling, not a target. Perpetual research should
+pass funding JSON and a point-in-time symbol leverage map. The global research
+ceiling may be 5x, but each asset cap is applied before sizing.
+
+`limit-bracket-signal` writes the latest closed-candle decision as
+`crypto.bracket-signal.v1`. It always writes a snapshot, including explicit
+`no_trade_reason` during warm-up, neutral regimes, risk-off spot markets, and
+periods without a valid retest. Actionable candidates contain a stable signal
+ID, entry limit, protective stop, take-profit limit, expiry, risk budget, and
+the evidence used by the daily/4-hour/1-hour layers. This JSON is intended to
+be the only public-to-private handoff: the future `crypto-operations` adapter
+can ingest it,
+deduplicate by `idempotency_key`, append it to the audit ledger, then fan out
+the same decision to Discord and the member dashboard without storing secrets
+in this public repository.
+
+The private `crypto-operations` repository now contains the v1 paper adapter,
+strict risk re-validation, persistent state, a hash-chain ledger, and the
+authenticated notifier bridge. The adapter is paper-only and still requires an
+external scheduler to provide the latest decision/bar files and run
+`bracket-bridge`; merging the repositories does not create that scheduler or
+populate Cloudflare/GitHub secrets. Until that runtime wiring is configured,
+this command remains a research snapshot and must not be treated as a
+live-order instruction.
+
+The handoff rules and machine-readable contract are documented in
+[`docs/operations-integration.md`](docs/operations-integration.md) and
+[`docs/crypto-bracket-signal-v1.schema.json`](docs/crypto-bracket-signal-v1.schema.json).
 
 CCXT is available as a public-data-only adapter for supported venues. It does
 not accept API keys and exposes no order or withdrawal methods:
