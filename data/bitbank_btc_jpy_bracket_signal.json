@@ -1,0 +1,67 @@
+{
+  "schema_version": "crypto.bracket-signal.v1",
+  "event_type": "crypto_investment_decision",
+  "generated_at": "2026-08-19T01:47:31.100237+00:00",
+  "idempotency_key": "decision:spot_limit_retest_balanced_0p35_1p5_2R_14d:2026-08-19T01:00:00+00:00:spot",
+  "source": {
+    "exchange": [
+      "bitbank"
+    ],
+    "market": "spot",
+    "interval": "1hour",
+    "closed_bar_timestamp": "2026-08-19T01:00:00+00:00",
+    "benchmark_symbol": "BTC",
+    "symbols": [
+      "BTC"
+    ]
+  },
+  "decision": "no_trade",
+  "recommended_action": "wait",
+  "regime": {
+    "label": "warmup",
+    "breadth": 0.0,
+    "confidence": 0.0,
+    "new_long_allowed": false,
+    "new_short_allowed": false
+  },
+  "ranking": [],
+  "candidates": [],
+  "no_trade_reason": "insufficient_higher_timeframe_history",
+  "guardrails": {
+    "market_order_fallback": false,
+    "cancel_on_regime_flip": true,
+    "limit_expiry_bars": 8,
+    "max_holding_days": 14,
+    "stop_target_same_bar_policy": "stop_first",
+    "strategy_status": "research_candidate_only"
+  },
+  "strategy": {
+    "name": "spot_limit_retest_balanced_0p35_1p5_2R_14d",
+    "market": "spot",
+    "execution_fast": 8,
+    "execution_breakout_lookback": 12,
+    "atr_window": 20,
+    "trend_fast": 6,
+    "trend_slow": 18,
+    "regime_fast": 20,
+    "regime_slow": 60,
+    "relative_momentum_window": 6,
+    "volume_window": 20,
+    "volume_multiple": 1.0,
+    "entry_offset_atr": 0.35,
+    "stop_atr": 1.5,
+    "take_profit_r": 2.0,
+    "limit_expiry_bars": 8,
+    "max_holding_days": 14,
+    "risk_per_trade": 0.004,
+    "max_positions": 4,
+    "top_n": 2,
+    "bottom_n": 2,
+    "breadth_threshold": 0.5,
+    "min_theme_score": 0.55,
+    "risk_off_shorts": false,
+    "max_gross_leverage": 1.0,
+    "symbol_max_leverage": 1.0,
+    "cancel_on_regime_flip": true
+  }
+}
