@@ -85,7 +85,7 @@ python -m crypto_simulator duckdb-import --input data/bitbank_btc_jpy_1hour.csv 
 ```
 
 `collect` keeps a rolling overlap so a late candle does not create a duplicate.
-The default `signal` command ignores the currently forming candle, evaluates all
+The hourly public collection workflow also writes `data/bitbank_btc_jpy_bracket_signal.json`, a read-only `crypto.bracket-signal.v1` snapshot for the private paper bridge. It contains no credentials; the private gate must still reject stale snapshots and re-check every candidate.\n\nThe default `signal` command ignores the currently forming candle, evaluates all
 three layers, and sets `price` to the next 1-hour candle open so it matches the
 backtest execution model. It requires that next candle to be present in the
 dataset; a missing execution candle is a safe error, not a close-price guess.

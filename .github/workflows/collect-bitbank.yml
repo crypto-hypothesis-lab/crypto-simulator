@@ -20,10 +20,18 @@ jobs:
         run: python -m pip install .
       - name: Fetch and merge latest closed-window data
         run: python -m crypto_simulator collect --exchange bitbank --symbol btc_jpy --interval 1hour --hours 72 --output data/bitbank_btc_jpy_1hour.csv
-      - name: Commit dataset when it changed
+      - name: Generate latest paper bracket snapshot
+        run: |
+          python -m crypto_simulator limit-bracket-signal \
+            --market spot \
+            --interval 1hour \
+            --benchmark-symbol BTC \
+            --input BTC=data/bitbank_btc_jpy_1hour.csv \
+            --output data/bitbank_btc_jpy_bracket_signal.json
+      - name: Commit dataset and snapshot when changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- data/bitbank_btc_jpy_1hour.csv
-          git diff --cached --quiet || git commit -m "data: update bitbank BTC/JPY 1h candles"
+          git add -- data/bitbank_btc_jpy_1hour.csv data/bitbank_btc_jpy_bracket_signal.json
+          git diff --cached --quiet || git commit -m "data: update bitbank BTC/JPY research snapshot"
           git push
