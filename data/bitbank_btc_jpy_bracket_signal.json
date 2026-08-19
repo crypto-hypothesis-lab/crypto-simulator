@@ -1,15 +1,15 @@
 {
   "schema_version": "crypto.bracket-signal.v1",
   "event_type": "crypto_investment_decision",
-  "generated_at": "2026-08-19T03:06:27.305771+00:00",
-  "idempotency_key": "decision:spot_limit_retest_balanced_0p35_1p5_2R_14d:2026-08-19T03:00:00+00:00:spot",
+  "generated_at": "2026-08-19T04:45:54.420769+00:00",
+  "idempotency_key": "decision:spot_limit_retest_balanced_0p35_1p5_2R_14d:2026-08-19T04:00:00+00:00:spot",
   "source": {
     "exchange": [
       "bitbank"
     ],
     "market": "spot",
     "interval": "1hour",
-    "closed_bar_timestamp": "2026-08-19T03:00:00+00:00",
+    "closed_bar_timestamp": "2026-08-19T04:00:00+00:00",
     "benchmark_symbol": "BTC",
     "symbols": [
       "BTC"
