@@ -14,6 +14,12 @@ from .dataset import load_funding_json, load_ohlcv_csv, merge_ohlcv_csv, write_f
 from .models import OHLCVBar
 from .portfolio import PortfolioConfig, default_theme_specs, funding_rates_by_interval, portfolio_research_report
 from .research import StrategySpec, forward_test_report, research_report
+from .spike_fade import default_spike_fade_specs, spike_fade_research_report
+from .limit_bracket import (
+    build_limit_bracket_signal_event,
+    default_limit_bracket_specs,
+    limit_bracket_research_report,
+)
 from .signals import build_signal_event
 from .strategy import MultiTimeframeStrategy, SmaCrossStrategy
 
@@ -197,6 +203,51 @@ def main() -> None:
     portfolio.add_argument("--rebalance-every-bars", type=int, default=1)
     portfolio.add_argument("--max-gross-leverage", type=Decimal)
     portfolio.add_argument("--max-leverage-map", type=Path, help="JSON object mapping symbols to exchange leverage caps")
+    spike_fade = subparsers.add_parser("spike-fade-research", help="research short-after-pump exhaustion strategies")
+    spike_fade.add_argument("--market", choices=["margin", "perpetual"], required=True)
+    spike_fade.add_argument("--input", dest="inputs", action="append", required=True, metavar="SYMBOL=CSV_PATH")
+    spike_fade.add_argument("--funding", dest="fundings", action="append", type=Path, help="funding JSON from fetch-funding; repeat per symbol")
+    spike_fade.add_argument("--benchmark-symbol")
+    spike_fade.add_argument("--output", type=Path, default=Path("state/spike-fade-research.json"))
+    spike_fade.add_argument("--interval", default="4hour")
+    spike_fade.add_argument("--train-days", type=int, default=240)
+    spike_fade.add_argument("--test-days", type=int, default=60)
+    spike_fade.add_argument("--step-days", type=int, default=60)
+    spike_fade.add_argument("--initial-cash", type=Decimal, default=Decimal("100000"))
+    spike_fade.add_argument("--fee-bps", type=Decimal)
+    spike_fade.add_argument("--slippage-bps", type=Decimal)
+    spike_fade.add_argument("--spread-bps", type=Decimal)
+    spike_fade.add_argument("--market-impact-bps", type=Decimal)
+    spike_fade.add_argument("--margin-interest-bps-per-day", type=Decimal)
+    spike_fade.add_argument("--max-gross-leverage", type=Decimal)
+    spike_fade.add_argument("--max-leverage-map", type=Path, help="JSON object mapping symbols to exchange leverage caps")
+    limit_bracket = subparsers.add_parser("limit-bracket-research", help="research multi-timeframe limit-entry bracket strategies")
+    limit_bracket.add_argument("--market", choices=["spot", "margin", "perpetual"], required=True)
+    limit_bracket.add_argument("--input", dest="inputs", action="append", required=True, metavar="SYMBOL=CSV_PATH")
+    limit_bracket.add_argument("--funding", dest="fundings", action="append", type=Path, help="funding JSON from fetch-funding; repeat per symbol")
+    limit_bracket.add_argument("--benchmark-symbol")
+    limit_bracket.add_argument("--output", type=Path, default=Path("state/limit-bracket-research.json"))
+    limit_bracket.add_argument("--interval", default="1hour")
+    limit_bracket.add_argument("--train-days", type=int, default=180)
+    limit_bracket.add_argument("--test-days", type=int, default=60)
+    limit_bracket.add_argument("--step-days", type=int, default=60)
+    limit_bracket.add_argument("--initial-cash", type=Decimal, default=Decimal("100000"))
+    limit_bracket.add_argument("--fee-bps", type=Decimal)
+    limit_bracket.add_argument("--slippage-bps", type=Decimal)
+    limit_bracket.add_argument("--spread-bps", type=Decimal)
+    limit_bracket.add_argument("--market-impact-bps", type=Decimal)
+    limit_bracket.add_argument("--margin-interest-bps-per-day", type=Decimal)
+    limit_bracket.add_argument("--max-gross-leverage", type=Decimal)
+    limit_bracket.add_argument("--max-leverage-map", type=Path, help="JSON object mapping symbols to exchange leverage caps")
+    bracket_signal = subparsers.add_parser("limit-bracket-signal", help="write the latest investment decision snapshot")
+    bracket_signal.add_argument("--market", choices=["spot", "margin", "perpetual"], required=True)
+    bracket_signal.add_argument("--input", dest="inputs", action="append", required=True, metavar="SYMBOL=CSV_PATH")
+    bracket_signal.add_argument("--benchmark-symbol")
+    bracket_signal.add_argument("--output", type=Path, default=Path("state/latest-bracket-signal.json"))
+    bracket_signal.add_argument("--interval", default="1hour")
+    bracket_signal.add_argument("--profile", choices=["fast", "balanced", "deep"], default="balanced")
+    bracket_signal.add_argument("--max-gross-leverage", type=Decimal)
+    bracket_signal.add_argument("--max-leverage-map", type=Path, help="JSON object mapping symbols to exchange leverage caps")
     signal = subparsers.add_parser("signal", help="write a paper-trading signal from the latest closed candle")
     signal.add_argument("--input", type=Path, required=True)
     signal.add_argument("--output", type=Path, required=True)
@@ -354,6 +405,155 @@ def main() -> None:
         print(
             f"saved={args.output} market={args.market} candidates={summary['candidate_count']} "
             f"walk_forward_windows={summary['walk_forward_windows']} status={summary['status']}"
+        )
+        return
+
+    if args.command == "spike-fade-research":
+        try:
+            parsed_inputs = [_parse_portfolio_input(value) for value in args.inputs]
+        except ValueError as exc:
+            parser.error(str(exc))
+        universe = {symbol: load_ohlcv_csv(path) for symbol, path in parsed_inputs}
+        funding_rates = None
+        if args.fundings:
+            points = [point for path in args.fundings for point in load_funding_json(path)]
+            funding_rates = funding_rates_by_interval(points, args.interval)
+            aliases = {symbol.upper(): symbol for symbol in universe}
+            funding_rates = {
+                aliases.get(symbol.upper(), symbol): rates
+                for symbol, rates in funding_rates.items()
+            }
+        leverage = args.max_gross_leverage or Decimal("2")
+        leverage_map = None
+        if args.max_leverage_map:
+            try:
+                payload = json.loads(args.max_leverage_map.read_text(encoding="utf-8"))
+                if not isinstance(payload, dict):
+                    raise ValueError("max leverage map must be a JSON object")
+                leverage_map = {str(symbol): Decimal(str(value)) for symbol, value in payload.items()}
+            except (OSError, json.JSONDecodeError, ValueError) as exc:
+                parser.error(f"invalid --max-leverage-map: {exc}")
+        report = spike_fade_research_report(
+            universe,
+            market=args.market,
+            specs=default_spike_fade_specs(args.market),
+            funding_rates=funding_rates,
+            benchmark_symbol=args.benchmark_symbol,
+            max_leverage_by_symbol=leverage_map,
+            interval=args.interval,
+            train_days=args.train_days,
+            test_days=args.test_days,
+            step_days=args.step_days,
+            config=PortfolioConfig(
+                initial_cash=args.initial_cash,
+                fee_bps=args.fee_bps if args.fee_bps is not None else (Decimal("5") if args.market == "perpetual" else Decimal("10")),
+                slippage_bps=args.slippage_bps if args.slippage_bps is not None else Decimal("5"),
+                spread_bps=args.spread_bps if args.spread_bps is not None else Decimal("10"),
+                market_impact_bps=args.market_impact_bps if args.market_impact_bps is not None else Decimal("5"),
+                margin_interest_bps_per_day=args.margin_interest_bps_per_day if args.margin_interest_bps_per_day is not None else (Decimal("4") if args.market == "margin" else Decimal("0")),
+                max_gross_leverage=leverage,
+                max_leverage_by_symbol=leverage_map,
+            ),
+        )
+        _write_json(args.output, report)
+        summary = report["summary"]
+        print(
+            f"saved={args.output} market={args.market} candidates={summary['candidate_count']} "
+            f"walk_forward_windows={summary['walk_forward_windows']} status={summary['status']}"
+        )
+        return
+
+    if args.command == "limit-bracket-research":
+        try:
+            parsed_inputs = [_parse_portfolio_input(value) for value in args.inputs]
+        except ValueError as exc:
+            parser.error(str(exc))
+        universe = {symbol: load_ohlcv_csv(path) for symbol, path in parsed_inputs}
+        funding_rates = None
+        if args.fundings:
+            points = [point for path in args.fundings for point in load_funding_json(path)]
+            funding_rates = funding_rates_by_interval(points, args.interval)
+            aliases = {symbol.upper(): symbol for symbol in universe}
+            funding_rates = {aliases.get(symbol.upper(), symbol): rates for symbol, rates in funding_rates.items()}
+        leverage = args.max_gross_leverage
+        if leverage is None:
+            leverage = Decimal("1") if args.market == "spot" else Decimal("2") if args.market == "margin" else Decimal("5")
+        margin_interest = args.margin_interest_bps_per_day
+        if margin_interest is None:
+            margin_interest = Decimal("4") if args.market == "margin" else Decimal("0")
+        leverage_map = None
+        if args.max_leverage_map:
+            try:
+                payload = json.loads(args.max_leverage_map.read_text(encoding="utf-8"))
+                if not isinstance(payload, dict):
+                    raise ValueError("max leverage map must be a JSON object")
+                leverage_map = {str(symbol): Decimal(str(value)) for symbol, value in payload.items()}
+            except (OSError, json.JSONDecodeError, ValueError) as exc:
+                parser.error(f"invalid --max-leverage-map: {exc}")
+        report = limit_bracket_research_report(
+            universe,
+            market=args.market,
+            specs=default_limit_bracket_specs(args.market),
+            interval=args.interval,
+            funding_rates=funding_rates,
+            benchmark_symbol=args.benchmark_symbol,
+            max_leverage_by_symbol=leverage_map,
+            train_days=args.train_days,
+            test_days=args.test_days,
+            step_days=args.step_days,
+            config=PortfolioConfig(
+                initial_cash=args.initial_cash,
+                fee_bps=args.fee_bps if args.fee_bps is not None else (Decimal("5") if args.market == "perpetual" else Decimal("10")),
+                slippage_bps=args.slippage_bps if args.slippage_bps is not None else Decimal("5"),
+                spread_bps=args.spread_bps if args.spread_bps is not None else Decimal("10"),
+                market_impact_bps=args.market_impact_bps if args.market_impact_bps is not None else Decimal("5"),
+                margin_interest_bps_per_day=margin_interest,
+                max_gross_leverage=leverage,
+                max_leverage_by_symbol=leverage_map,
+            ),
+        )
+        _write_json(args.output, report)
+        summary = report["summary"]
+        print(
+            f"saved={args.output} market={args.market} candidates={summary['candidate_count']} "
+            f"walk_forward_windows={summary['walk_forward_windows']} status={summary['status']}"
+        )
+        return
+
+    if args.command == "limit-bracket-signal":
+        try:
+            parsed_inputs = [_parse_portfolio_input(value) for value in args.inputs]
+        except ValueError as exc:
+            parser.error(str(exc))
+        universe = {symbol: load_ohlcv_csv(path) for symbol, path in parsed_inputs}
+        leverage = args.max_gross_leverage
+        if leverage is None:
+            leverage = Decimal("1") if args.market == "spot" else Decimal("2") if args.market == "margin" else Decimal("5")
+        leverage_map = None
+        if args.max_leverage_map:
+            try:
+                payload = json.loads(args.max_leverage_map.read_text(encoding="utf-8"))
+                if not isinstance(payload, dict):
+                    raise ValueError("max leverage map must be a JSON object")
+                leverage_map = {str(symbol): Decimal(str(value)) for symbol, value in payload.items()}
+            except (OSError, json.JSONDecodeError, ValueError) as exc:
+                parser.error(f"invalid --max-leverage-map: {exc}")
+        profiles = {"fast": 0, "balanced": 1, "deep": 2}
+        spec = default_limit_bracket_specs(args.market)[profiles[args.profile]]
+        event = build_limit_bracket_signal_event(
+            universe,
+            spec,
+            interval=args.interval,
+            benchmark_symbol=args.benchmark_symbol,
+            config=PortfolioConfig(
+                max_gross_leverage=leverage,
+                max_leverage_by_symbol=leverage_map,
+            ),
+        )
+        _write_json(args.output, event)
+        print(
+            f"saved={args.output} decision={event['decision']} regime={event['regime']['label']} "
+            f"candidates={len(event['candidates'])} data_timestamp={event['source']['closed_bar_timestamp']}"
         )
         return
 
