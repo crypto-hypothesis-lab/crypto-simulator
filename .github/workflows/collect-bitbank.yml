@@ -31,7 +31,7 @@ jobs:
       - name: Commit dataset and snapshot when changed
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -- data/bitbank_btc_jpy_1hour.csv data/bitbank_btc_jpy_bracket_signal.json
           git diff --cached --quiet || git commit -m "data: update bitbank BTC/JPY research snapshot"
           git push
