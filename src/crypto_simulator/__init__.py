@@ -13,6 +13,25 @@ from .portfolio import (
     run_portfolio_backtest,
 )
 from .research import PerformanceMetrics, StrategySpec, dataset_quality, forward_test_report, research_report
+from .spike_fade import (
+    SpikeFadeMetrics,
+    SpikeFadeResult,
+    SpikeFadeSpec,
+    default_spike_fade_specs,
+    evaluate_spike_fade_result,
+    run_spike_fade_backtest,
+    spike_fade_research_report,
+)
+from .limit_bracket import (
+    LimitBracketMetrics,
+    LimitBracketResult,
+    LimitBracketSpec,
+    default_limit_bracket_specs,
+    build_limit_bracket_signal_event,
+    evaluate_limit_bracket_result,
+    limit_bracket_research_report,
+    run_limit_bracket_backtest,
+)
 from .strategy import MultiTimeframeSignal, MultiTimeframeStrategy
 from .timeframes import resample_ohlcv
 
@@ -37,4 +56,19 @@ __all__ = [
     "research_report",
     "run_backtest",
     "run_portfolio_backtest",
+    "SpikeFadeMetrics",
+    "SpikeFadeResult",
+    "SpikeFadeSpec",
+    "default_spike_fade_specs",
+    "evaluate_spike_fade_result",
+    "run_spike_fade_backtest",
+    "spike_fade_research_report",
+    "LimitBracketMetrics",
+    "LimitBracketResult",
+    "LimitBracketSpec",
+    "default_limit_bracket_specs",
+    "build_limit_bracket_signal_event",
+    "evaluate_limit_bracket_result",
+    "limit_bracket_research_report",
+    "run_limit_bracket_backtest",
 ]
