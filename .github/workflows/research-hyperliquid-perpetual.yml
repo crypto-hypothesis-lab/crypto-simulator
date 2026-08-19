@@ -1,0 +1,207 @@
+name: Research HyperLiquid liquid perpetual portfolio
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Historical lookback in days, including funding history"
+        required: false
+        default: "365"
+        type: string
+      max_symbols:
+        description: "Maximum number of current liquid perpetuals"
+        required: false
+        default: "20"
+        type: string
+      min_daily_notional_usd:
+        description: "Minimum current 24h notional volume in USD"
+        required: false
+        default: "2000000"
+        type: string
+      min_history_bars:
+        description: "Minimum daily bars required after the history fetch"
+        required: false
+        default: "300"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crypto-hyperliquid-liquid-research
+  cancel-in-progress: true
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - name: Install simulator
+        run: python -m pip install .
+      - name: Select current liquid perpetual universe
+        env:
+          MAX_SYMBOLS: "${{ inputs.max_symbols }}"
+          MIN_DAILY_NOTIONAL_USD: "${{ inputs.min_daily_notional_usd }}"
+        run: |
+          mkdir -p /tmp/hyperliquid
+          python - <<'PY'
+          import json
+          import os
+          from decimal import Decimal, InvalidOperation
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+
+          request = Request(
+              "https://api.hyperliquid.xyz/info",
+              data=json.dumps({"type": "metaAndAssetCtxs"}).encode(),
+              headers={"Content-Type": "application/json", "Accept": "application/json"},
+          )
+          with urlopen(request, timeout=30) as response:
+              meta, contexts = json.load(response)
+          min_notional = Decimal(os.environ["MIN_DAILY_NOTIONAL_USD"])
+          candidates = []
+          for asset, context in zip(meta["universe"], contexts):
+              try:
+                  notional = Decimal(str(context.get("dayNtlVlm", "0")))
+              except (TypeError, ValueError, InvalidOperation):
+                  continue
+              if notional >= min_notional:
+                  candidates.append(
+                      {
+                          "symbol": asset["name"],
+                          "day_notional_volume_usd": str(notional),
+                          "max_leverage": asset["maxLeverage"],
+                      }
+                  )
+          candidates.sort(key=lambda item: (Decimal(item["day_notional_volume_usd"]), item["symbol"]), reverse=True)
+          max_symbols = int(os.environ["MAX_SYMBOLS"])
+          candidates = candidates[:max_symbols]
+          if not any(item["symbol"] == "BTC" for item in candidates):
+              raise RuntimeError("BTC did not pass the liquidity filter; refusing to run without a benchmark")
+          candidates.sort(key=lambda item: (item["symbol"] != "BTC", -Decimal(item["day_notional_volume_usd"])))
+          manifest = {
+              "selection_basis": "current HyperLiquid metaAndAssetCtxs snapshot",
+              "min_daily_notional_usd": str(min_notional),
+              "max_symbols": max_symbols,
+              "symbols": candidates,
+              "research_only": True,
+          }
+          manifest_text = json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
+          Path("/tmp/hyperliquid/liquid-universe.json").write_text(manifest_text, encoding="utf-8")
+          Path("state").mkdir(parents=True, exist_ok=True)
+          Path("state/hyperliquid-liquid-universe.json").write_text(manifest_text, encoding="utf-8")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
+              env_file.write("HL_CANDIDATE_SYMBOLS=" + " ".join(item["symbol"] for item in candidates) + "\n")
+          print("selected_symbols=" + ",".join(item["symbol"] for item in candidates))
+          PY
+      - name: Fetch liquid perpetual history
+        run: |
+          set +e
+          failed=0
+          for symbol in $HL_CANDIDATE_SYMBOLS; do
+            python -m crypto_simulator fetch \
+              --exchange hyperliquid \
+              --symbol "$symbol" \
+              --interval 1d \
+              --days "${{ inputs.days }}" \
+              --output "/tmp/hyperliquid/${symbol}.csv"
+            status=$?
+            if [ "$status" -ne 0 ]; then
+              echo "$symbol" >> /tmp/hyperliquid/history-failures.txt
+              failed=$((failed + 1))
+            fi
+          done
+          echo "history_fetch_failures=$failed"
+      - name: Keep symbols with sufficient history and build arguments
+        env:
+          MIN_HISTORY_BARS: "${{ inputs.min_history_bars }}"
+        run: |
+          python - <<'PY'
+          import csv
+          import json
+          import os
+          from pathlib import Path
+
+          manifest_path = Path("/tmp/hyperliquid/liquid-universe.json")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          minimum = int(os.environ["MIN_HISTORY_BARS"])
+
+          eligible = []
+          rejected = []
+          for item in manifest["symbols"]:
+              symbol = item["symbol"]
+              path = Path("/tmp/hyperliquid") / f"{symbol}.csv"
+              try:
+                  with path.open(newline="", encoding="utf-8") as file:
+                      bars = sum(1 for _ in csv.DictReader(file))
+              except FileNotFoundError:
+                  bars = 0
+              if bars >= minimum:
+                  item["history_bars"] = bars
+                  eligible.append(item)
+              else:
+                  rejected.append({"symbol": symbol, "history_bars": bars, "reason": "insufficient_history"})
+          if not any(item["symbol"] == "BTC" for item in eligible):
+              raise RuntimeError("BTC did not have enough history after fetching")
+
+          manifest["eligible_symbols"] = eligible
+          manifest["rejected_symbols"] = rejected
+          manifest_text = json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
+          manifest_path.write_text(manifest_text, encoding="utf-8")
+          Path("state/hyperliquid-liquid-universe.json").write_text(manifest_text, encoding="utf-8")
+          caps = {item["symbol"]: item["max_leverage"] for item in eligible}
+          Path("/tmp/hyperliquid/leverage-caps.json").write_text(json.dumps(caps, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+          input_args = []
+          funding_args = []
+          symbols = []
+          for item in eligible:
+              symbol = item["symbol"]
+              symbols.append(symbol)
+              input_args.extend(["--input", f"{symbol}=/tmp/hyperliquid/{symbol}.csv"])
+              funding_args.extend(["--funding", f"/tmp/hyperliquid/{symbol}-funding.json"])
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
+              env_file.write("HL_SYMBOLS=" + " ".join(symbols) + "\n")
+              env_file.write("HL_INPUT_ARGS=" + " ".join(input_args) + "\n")
+              env_file.write("HL_FUNDING_ARGS=" + " ".join(funding_args) + "\n")
+          print("eligible_symbols=" + ",".join(symbols))
+          print("rejected_symbols=" + ",".join(item["symbol"] for item in rejected))
+          PY
+      - name: Fetch funding history for eligible symbols
+        run: |
+          for symbol in $HL_SYMBOLS; do
+            python -m crypto_simulator fetch-funding \
+              --symbol "$symbol" \
+              --days "${{ inputs.days }}" \
+              --output "/tmp/hyperliquid/${symbol}-funding.json"
+          done
+      - name: Run perpetual research with funding costs
+        run: >-
+          python -m crypto_simulator portfolio-research
+          --market perpetual
+          $HL_INPUT_ARGS
+          $HL_FUNDING_ARGS
+          --benchmark-symbol BTC
+          --interval 1day
+          --train-days 180
+          --test-days 60
+          --step-days 60
+          --fee-bps 5
+          --slippage-bps 5
+          --spread-bps 10
+          --market-impact-bps 5
+          --max-gross-leverage 5
+          --max-leverage-map /tmp/hyperliquid/leverage-caps.json
+          --output state/hyperliquid-liquid-perpetual-portfolio-research.json
+      - name: Upload liquid-universe research report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hyperliquid-liquid-portfolio-research-${{ github.run_id }}
+          path: |
+            state/hyperliquid-liquid-universe.json
+            state/hyperliquid-liquid-perpetual-portfolio-research.json
+          retention-days: 30

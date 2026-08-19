@@ -38,3 +38,16 @@ def test_backtest_forces_exit_after_maximum_holding_period() -> None:
     )
     assert [trade.side for trade in result.trades] == ["buy", "sell"]
     assert result.trades[-1].reason == "max_holding_period"
+
+
+def test_execution_cost_model_applies_half_spread_and_market_impact() -> None:
+    config = BacktestConfig(
+        fee_bps=Decimal("0"),
+        slippage_bps=Decimal("5"),
+        spread_bps=Decimal("10"),
+        market_impact_bps=Decimal("3"),
+    )
+
+    assert config.one_way_execution_bps == Decimal("13")
+    assert config.execution_price(Decimal("100"), "buy") == Decimal("100.13")
+    assert config.execution_price(Decimal("100"), "sell") == Decimal("99.87")
