@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from bisect import bisect_right
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import hashlib
@@ -13,6 +13,9 @@ from .models import OHLCVBar
 from .portfolio import PortfolioConfig, PortfolioTrade
 from .research import dataset_quality
 from .timeframes import interval_duration, resample_ohlcv
+
+
+_FUNDING_KEYS_CACHE: dict[int, tuple[datetime, ...]] = {}
 
 
 def _safe_float(value: float) -> float:
@@ -124,6 +127,22 @@ class LimitBracketSpec:
     max_gross_leverage: float = 5.0
     symbol_max_leverage: float = 5.0
     cancel_on_regime_flip: bool = True
+    strategy_family: str = "regime_limit_retest"
+    event_only: bool = False
+    required_regime: str | None = None
+    required_daily_direction: str | None = None
+    min_consecutive_green_1h: int | None = None
+    max_consecutive_green_1h: int | None = None
+    min_prior_consecutive_green_1h: int | None = None
+    max_prior_consecutive_green_1h: int | None = None
+    min_volume_multiple: float | None = None
+    require_rejection_candle: bool = False
+    min_rejection_fraction: float | None = None
+    relative_return_window: int = 1
+    min_relative_return: float | None = None
+    min_funding_rate: float | None = None
+    require_funding: bool = False
+    max_holding_hours: float | None = None
 
     def __post_init__(self) -> None:
         if self.market not in {"spot", "margin", "perpetual"}:
@@ -171,6 +190,36 @@ class LimitBracketSpec:
             raise ValueError("spot candidates cannot short in risk-off")
         if self.market == "spot" and self.max_gross_leverage > 1:
             raise ValueError("spot candidates cannot use leverage")
+        if self.strategy_family.strip() == "":
+            raise ValueError("strategy_family must not be empty")
+        if self.required_regime is not None and self.required_regime not in {"risk_on", "risk_off"}:
+            raise ValueError("required_regime must be risk_on or risk_off")
+        if self.required_daily_direction is not None and self.required_daily_direction not in {"RED", "GREEN", "DOJI"}:
+            raise ValueError("required_daily_direction must be RED, GREEN, or DOJI")
+        for name in ("min_consecutive_green_1h", "max_consecutive_green_1h"):
+            value = getattr(self, name)
+            if value is not None and value < 0:
+                raise ValueError(f"{name} must not be negative")
+        if self.min_consecutive_green_1h is not None and self.max_consecutive_green_1h is not None:
+            if self.max_consecutive_green_1h < self.min_consecutive_green_1h:
+                raise ValueError("max_consecutive_green_1h must not be below the minimum")
+        for name in ("min_prior_consecutive_green_1h", "max_prior_consecutive_green_1h"):
+            value = getattr(self, name)
+            if value is not None and value < 0:
+                raise ValueError(f"{name} must not be negative")
+        if self.min_prior_consecutive_green_1h is not None and self.max_prior_consecutive_green_1h is not None:
+            if self.max_prior_consecutive_green_1h < self.min_prior_consecutive_green_1h:
+                raise ValueError("max_prior_consecutive_green_1h must not be below the minimum")
+        if self.min_volume_multiple is not None and self.min_volume_multiple <= 0:
+            raise ValueError("min_volume_multiple must be positive")
+        if self.min_rejection_fraction is not None and not 0.0 <= self.min_rejection_fraction <= 1.0:
+            raise ValueError("min_rejection_fraction must be between 0 and 1")
+        if self.relative_return_window <= 0:
+            raise ValueError("relative_return_window must be positive")
+        if self.max_holding_hours is not None and not 0 < self.max_holding_hours <= 30 * 24:
+            raise ValueError("max_holding_hours must be between 0 and 720")
+        if self.require_funding and self.min_funding_rate is None:
+            raise ValueError("require_funding requires min_funding_rate")
 
     @property
     def minimum_source_history(self) -> int:
@@ -233,6 +282,131 @@ def default_limit_bracket_specs(market: str) -> list[LimitBracketSpec]:
     ]
 
 
+def default_mexc_event_specs(market: str) -> list[LimitBracketSpec]:
+    """Return the small, explicit MEXC event strategy set.
+
+    These are research/Paper candidates only.  The short candidate mirrors the
+    external scanner's causal features (daily RED, three-to-four consecutive
+    green 1-hour candles, relative strength, and a funding floor).  The long
+    candidate reuses the existing regime-aware pullback model with the shorter
+    event holding window.  No candidate has live-order authority.
+    """
+
+    if market not in {"margin", "perpetual"}:
+        raise ValueError("MEXC event candidates require margin or perpetual market")
+    return [
+        LimitBracketSpec(
+            "mexc_event_short_daily_red_green_3_4_v1",
+            market=market,
+            execution_fast=3,
+            execution_breakout_lookback=6,
+            atr_window=14,
+            trend_fast=6,
+            trend_slow=18,
+            regime_fast=20,
+            regime_slow=60,
+            relative_momentum_window=1,
+            volume_window=20,
+            entry_offset_atr=0.75,
+            stop_atr=1.5,
+            take_profit_r=2.0,
+            limit_expiry_bars=4,
+            max_holding_days=1,
+            max_holding_hours=8,
+            risk_per_trade=0.001,
+            max_positions=1,
+            top_n=1,
+            bottom_n=1,
+            breadth_threshold=0.5,
+            min_theme_score=0.55,
+            risk_off_shorts=True,
+            max_gross_leverage=3.0,
+            symbol_max_leverage=3.0,
+            strategy_family="mexc_event_short",
+            event_only=True,
+            required_regime="risk_off",
+            required_daily_direction="RED",
+            min_consecutive_green_1h=3,
+            max_consecutive_green_1h=4,
+            relative_return_window=1,
+            min_relative_return=0.05,
+            min_funding_rate=-0.0005,
+            require_funding=True,
+        ),
+        LimitBracketSpec(
+            "mexc_event_long_pullback_atr_v1",
+            market=market,
+            execution_fast=8,
+            execution_breakout_lookback=12,
+            atr_window=20,
+            trend_fast=6,
+            trend_slow=18,
+            regime_fast=20,
+            regime_slow=60,
+            relative_momentum_window=6,
+            volume_window=20,
+            entry_offset_atr=0.35,
+            stop_atr=1.5,
+            take_profit_r=2.0,
+            limit_expiry_bars=4,
+            max_holding_days=1,
+            max_holding_hours=8,
+            risk_per_trade=0.001,
+            max_positions=1,
+            top_n=1,
+            bottom_n=1,
+            breadth_threshold=0.5,
+            min_theme_score=0.55,
+            risk_off_shorts=False,
+            max_gross_leverage=3.0,
+            symbol_max_leverage=3.0,
+            strategy_family="mexc_event_long_pullback",
+            required_regime="risk_on",
+        ),
+        LimitBracketSpec(
+            "mexc_event_short_rejection_volume_v1",
+            market=market,
+            execution_fast=3,
+            execution_breakout_lookback=6,
+            atr_window=14,
+            trend_fast=6,
+            trend_slow=18,
+            regime_fast=20,
+            regime_slow=60,
+            relative_momentum_window=1,
+            volume_window=20,
+            entry_offset_atr=0.50,
+            stop_atr=1.35,
+            take_profit_r=1.6,
+            limit_expiry_bars=4,
+            max_holding_days=1,
+            max_holding_hours=12,
+            risk_per_trade=0.001,
+            max_positions=1,
+            top_n=1,
+            bottom_n=1,
+            breadth_threshold=0.5,
+            min_theme_score=0.55,
+            risk_off_shorts=True,
+            max_gross_leverage=5.0,
+            symbol_max_leverage=5.0,
+            strategy_family="mexc_event_short_rejection_volume",
+            event_only=True,
+            required_regime="risk_off",
+            required_daily_direction="RED",
+            min_prior_consecutive_green_1h=3,
+            max_prior_consecutive_green_1h=6,
+            min_volume_multiple=1.5,
+            require_rejection_candle=True,
+            min_rejection_fraction=0.55,
+            relative_return_window=4,
+            min_relative_return=0.03,
+            min_funding_rate=-0.0005,
+            require_funding=True,
+        ),
+    ]
+
+
 @dataclass(frozen=True, slots=True)
 class LimitBracketSignal:
     symbol: str
@@ -247,6 +421,14 @@ class LimitBracketSignal:
     breadth: float
     theme_score: float
     breakout_level: Decimal
+    strategy_family: str = "regime_limit_retest"
+    daily_direction: str | None = None
+    consecutive_green_1h: int | None = None
+    prior_consecutive_green_1h: int | None = None
+    volume_multiple: float | None = None
+    rejection_fraction: float | None = None
+    relative_return: float | None = None
+    funding_rate: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -401,6 +583,8 @@ def _context_and_scores(
     timestamp: datetime,
     spec: LimitBracketSpec,
     benchmark_symbol: str,
+    *,
+    calculate_scores: bool = True,
 ) -> tuple[_MarketContext, dict[str, float]]:
     benchmark_daily = views[benchmark_symbol].daily.through(timestamp)
     if len(benchmark_daily) < spec.regime_slow:
@@ -423,6 +607,9 @@ def _context_and_scores(
         regime = "risk_off"
     else:
         regime = "neutral"
+
+    if not calculate_scores:
+        return _MarketContext(regime, breadth), {}
 
     benchmark_trend = views[benchmark_symbol].four_hour.through(timestamp)
     if len(benchmark_trend) < max(spec.trend_slow, spec.relative_momentum_window) + 1:
@@ -461,6 +648,212 @@ def _context_and_scores(
         for symbol, values in metrics.items()
     }
     return _MarketContext(regime, breadth), scores
+
+
+def _daily_direction(bars: list[OHLCVBar]) -> str | None:
+    if not bars:
+        return None
+    latest = bars[-1]
+    if latest.close > latest.open:
+        return "GREEN"
+    if latest.close < latest.open:
+        return "RED"
+    return "DOJI"
+
+
+def _consecutive_green_1h(series: list[OHLCVBar], index: int) -> int:
+    count = 0
+    for bar in reversed(series[: index + 1]):
+        if bar.close <= bar.open:
+            break
+        count += 1
+    return count
+
+
+def _latest_funding_rate(
+    rates: Mapping[datetime, Decimal] | None,
+    timestamp: datetime,
+) -> Decimal | None:
+    if not rates:
+        return None
+    cache_key = id(rates)
+    keys = _FUNDING_KEYS_CACHE.get(cache_key)
+    if keys is None or len(keys) != len(rates):
+        keys = tuple(sorted(rates))
+        _FUNDING_KEYS_CACHE[cache_key] = keys
+    position = bisect_right(keys, timestamp) - 1
+    return rates[keys[position]] if position >= 0 else None
+
+
+def _volume_multiple(series: list[OHLCVBar], index: int, window: int) -> float | None:
+    if index < window:
+        return None
+    baseline = [bar.volume for bar in series[index - window:index]]
+    baseline_volume = median(baseline) if baseline else Decimal("0")
+    if baseline_volume <= 0:
+        return None
+    return float(series[index].volume / baseline_volume)
+
+
+def _rejection_fraction(bar: OHLCVBar) -> float:
+    candle_range = bar.high - bar.low
+    if candle_range <= 0:
+        return 0.0
+    return float((bar.high - bar.close) / candle_range)
+
+
+def _event_features(
+    aligned: Mapping[str, list[OHLCVBar]],
+    views: Mapping[str, _TimeframeView],
+    symbol: str,
+    benchmark_symbol: str,
+    index: int,
+    timestamp: datetime,
+    spec: LimitBracketSpec,
+    funding_rates: Mapping[str, Mapping[datetime, Decimal]] | None,
+) -> dict[str, Any]:
+    series = aligned[symbol]
+    benchmark = aligned[benchmark_symbol]
+    window = spec.relative_return_window
+    relative_return: float | None = None
+    if index >= window and benchmark[index - window].close > 0 and series[index - window].close > 0:
+        asset_return = series[index].close / series[index - window].close - Decimal("1")
+        benchmark_return = benchmark[index].close / benchmark[index - window].close - Decimal("1")
+        relative_return = float(asset_return - benchmark_return)
+    funding_rate = _latest_funding_rate((funding_rates or {}).get(symbol), timestamp)
+    current = series[index]
+    return {
+        "daily_direction": _daily_direction(views[symbol].daily.through(timestamp)),
+        "consecutive_green_1h": _consecutive_green_1h(series, index),
+        "prior_consecutive_green_1h": _consecutive_green_1h(series, index - 1) if index > 0 else 0,
+        "volume_multiple": _volume_multiple(series, index, spec.volume_window),
+        "is_red_candle": current.close < current.open,
+        "rejection_fraction": _rejection_fraction(current),
+        "relative_return": relative_return,
+        "funding_rate": funding_rate,
+    }
+
+
+def _event_filter_passes(
+    context: _MarketContext,
+    spec: LimitBracketSpec,
+    features: Mapping[str, Any],
+) -> bool:
+    if spec.required_regime is not None and context.regime != spec.required_regime:
+        return False
+    if spec.required_daily_direction is not None and features.get("daily_direction") != spec.required_daily_direction:
+        return False
+    green_count = features.get("consecutive_green_1h")
+    if spec.min_consecutive_green_1h is not None and (green_count is None or green_count < spec.min_consecutive_green_1h):
+        return False
+    if spec.max_consecutive_green_1h is not None and (green_count is None or green_count > spec.max_consecutive_green_1h):
+        return False
+    prior_green_count = features.get("prior_consecutive_green_1h")
+    if spec.min_prior_consecutive_green_1h is not None and (
+        prior_green_count is None or prior_green_count < spec.min_prior_consecutive_green_1h
+    ):
+        return False
+    if spec.max_prior_consecutive_green_1h is not None and (
+        prior_green_count is None or prior_green_count > spec.max_prior_consecutive_green_1h
+    ):
+        return False
+    volume_multiple = features.get("volume_multiple")
+    if spec.min_volume_multiple is not None and (
+        volume_multiple is None or volume_multiple < spec.min_volume_multiple
+    ):
+        return False
+    if spec.require_rejection_candle and not features.get("is_red_candle", False):
+        return False
+    rejection_fraction = features.get("rejection_fraction")
+    if spec.min_rejection_fraction is not None and (
+        rejection_fraction is None or rejection_fraction < spec.min_rejection_fraction
+    ):
+        return False
+    relative_return = features.get("relative_return")
+    if spec.min_relative_return is not None and (relative_return is None or relative_return < spec.min_relative_return):
+        return False
+    funding_rate = features.get("funding_rate")
+    if spec.require_funding and funding_rate is None:
+        return False
+    if spec.min_funding_rate is not None and (
+        funding_rate is None or funding_rate < Decimal(str(spec.min_funding_rate))
+    ):
+        return False
+    return True
+
+
+def _event_candidate_for_symbol(
+    series: list[OHLCVBar],
+    index: int,
+    timestamp: datetime,
+    spec: LimitBracketSpec,
+    context: _MarketContext,
+    features: Mapping[str, Any],
+    direction: str,
+) -> LimitBracketSignal | None:
+    if index + 1 < spec.minimum_source_history:
+        return None
+    atr = _atr(series, index, spec.atr_window)
+    if atr <= 0:
+        return None
+    current = series[index]
+    limit_price = (
+        current.close - atr * Decimal(str(spec.entry_offset_atr))
+        if direction == "long"
+        else current.close + atr * Decimal(str(spec.entry_offset_atr))
+    )
+    relative_return = features.get("relative_return")
+    relative_score = 0.5
+    if spec.min_relative_return and relative_return is not None:
+        relative_score = min(max(relative_return / spec.min_relative_return, 0.0), 2.0) / 2.0
+    green_count = int(
+        features.get("prior_consecutive_green_1h")
+        if spec.min_prior_consecutive_green_1h is not None
+        else features.get("consecutive_green_1h")
+        or 0
+    )
+    green_ceiling = spec.max_prior_consecutive_green_1h or spec.max_consecutive_green_1h or 4
+    green_score = min(green_count / max(green_ceiling, 1), 1.0)
+    regime_score = 1.0 if context.regime == spec.required_regime else 0.5
+    volume_multiple = float(features.get("volume_multiple") or 0.0)
+    rejection_fraction = float(features.get("rejection_fraction") or 0.0)
+    if spec.min_volume_multiple is not None or spec.require_rejection_candle:
+        volume_score = min(volume_multiple / max(spec.min_volume_multiple or 1.0, 1.0), 2.0) / 2.0
+        score = max(
+            0.0,
+            min(
+                1.0,
+                0.30 * relative_score
+                + 0.20 * green_score
+                + 0.20 * volume_score
+                + 0.15 * rejection_fraction
+                + 0.15 * regime_score,
+            ),
+        )
+    else:
+        score = max(0.0, min(1.0, 0.45 * relative_score + 0.35 * green_score + 0.20 * regime_score))
+    return LimitBracketSignal(
+        series[0].symbol,
+        direction,
+        index,
+        timestamp.isoformat(),
+        limit_price,
+        atr,
+        atr * Decimal(str(spec.stop_atr)),
+        score,
+        context.regime,
+        context.breadth,
+        1.0 if direction == "short" else 0.0,
+        current.close,
+        spec.strategy_family,
+        features.get("daily_direction"),
+        features.get("consecutive_green_1h"),
+        features.get("prior_consecutive_green_1h"),
+        features.get("volume_multiple"),
+        features.get("rejection_fraction"),
+        relative_return,
+        features.get("funding_rate"),
+    )
 
 
 def _candidate_for_symbol(
@@ -531,10 +924,46 @@ def _find_signals(
     timestamps: list[datetime],
     spec: LimitBracketSpec,
     benchmark_symbol: str,
+    funding_rates: Mapping[str, Mapping[datetime, Decimal]] | None = None,
 ) -> list[LimitBracketSignal]:
     timestamp = timestamps[index]
-    context, scores = _context_and_scores(aligned, views, index, timestamp, spec, benchmark_symbol)
-    if context.regime not in {"risk_on", "risk_off"} or not scores:
+    context, scores = _context_and_scores(
+        aligned,
+        views,
+        index,
+        timestamp,
+        spec,
+        benchmark_symbol,
+        calculate_scores=not spec.event_only,
+    )
+    if context.regime not in {"risk_on", "risk_off"}:
+        return []
+    if spec.required_regime is not None and context.regime != spec.required_regime:
+        return []
+
+    if spec.event_only:
+        signals: list[LimitBracketSignal] = []
+        for symbol, series in aligned.items():
+            if symbol == benchmark_symbol:
+                continue
+            features = _event_features(
+                aligned,
+                views,
+                symbol,
+                benchmark_symbol,
+                index,
+                timestamp,
+                spec,
+                funding_rates,
+            )
+            if not _event_filter_passes(context, spec, features):
+                continue
+            signal = _event_candidate_for_symbol(series, index, timestamp, spec, context, features, "short")
+            if signal is not None:
+                signals.append(signal)
+        return sorted(signals, key=lambda signal: (signal.score, signal.symbol), reverse=True)[: spec.max_positions]
+
+    if not scores:
         return []
     ranked_long = set(sorted(scores, key=lambda symbol: (scores[symbol], symbol), reverse=True)[: spec.top_n])
     ranked_short = set(sorted(scores, key=lambda symbol: (scores[symbol], symbol))[: spec.bottom_n])
@@ -550,10 +979,31 @@ def _find_signals(
         trend_slow = _sma(trend_closes, spec.trend_slow)
         trend_up = trend[-1].close > trend_slow and trend_fast > trend_slow
         trend_down = trend[-1].close < trend_slow and trend_fast < trend_slow
+        features = _event_features(
+            aligned,
+            views,
+            symbol,
+            benchmark_symbol,
+            index,
+            timestamp,
+            spec,
+            funding_rates,
+        )
+        if not _event_filter_passes(context, spec, features):
+            continue
         if context.regime == "risk_on" and symbol in ranked_long and scores[symbol] >= spec.min_theme_score and trend_up:
             signal = _candidate_for_symbol(series, index, timestamp, spec, context, scores[symbol], "long")
             if signal:
-                signals.append(signal)
+                signals.append(
+                    replace(
+                        signal,
+                        strategy_family=spec.strategy_family,
+                        daily_direction=features.get("daily_direction"),
+                        consecutive_green_1h=features.get("consecutive_green_1h"),
+                        relative_return=features.get("relative_return"),
+                        funding_rate=features.get("funding_rate"),
+                    )
+                )
         elif (
             context.regime == "risk_off"
             and spec.risk_off_shorts
@@ -564,7 +1014,16 @@ def _find_signals(
         ):
             signal = _candidate_for_symbol(series, index, timestamp, spec, context, scores[symbol], "short")
             if signal:
-                signals.append(signal)
+                signals.append(
+                    replace(
+                        signal,
+                        strategy_family=spec.strategy_family,
+                        daily_direction=features.get("daily_direction"),
+                        consecutive_green_1h=features.get("consecutive_green_1h"),
+                        relative_return=features.get("relative_return"),
+                        funding_rate=features.get("funding_rate"),
+                    )
+                )
     return sorted(signals, key=lambda signal: (signal.score, signal.symbol), reverse=True)[: spec.max_positions]
 
 
@@ -632,6 +1091,8 @@ def _signal_dict(signal: LimitBracketSignal) -> dict[str, Any]:
     value = asdict(signal)
     for key in ("limit_price", "atr", "stop_distance", "breakout_level"):
         value[key] = str(getattr(signal, key))
+    if signal.funding_rate is not None:
+        value["funding_rate"] = str(signal.funding_rate)
     return value
 
 
@@ -642,6 +1103,7 @@ def build_limit_bracket_signal_event(
     interval: str = "1hour",
     config: PortfolioConfig | None = None,
     benchmark_symbol: str | None = None,
+    funding_rates: Mapping[str, Mapping[datetime, Decimal]] | None = None,
 ) -> dict[str, Any]:
     """Build one dashboard/notification-ready decision snapshot.
 
@@ -665,7 +1127,7 @@ def build_limit_bracket_signal_event(
     index = len(timestamps) - 1
     timestamp = timestamps[index]
     context, scores = _context_and_scores(aligned, views, index, timestamp, spec, benchmark)
-    fresh = _find_signals(aligned, views, index, timestamps, spec, benchmark)
+    fresh = _find_signals(aligned, views, index, timestamps, spec, benchmark, funding_rates)
     ranking = [
         {
             "rank": rank,
@@ -727,6 +1189,11 @@ def build_limit_bracket_signal_event(
                 },
                 "expires_at": (timestamp + interval_duration(interval) * spec.limit_expiry_bars).isoformat(),
                 "max_holding_days": spec.max_holding_days,
+                **(
+                    {"max_holding_hours": spec.max_holding_hours}
+                    if spec.max_holding_hours is not None
+                    else {}
+                ),
                 "risk": {
                     "risk_per_trade": spec.risk_per_trade,
                     "sizing": "risk_based_after_fill",
@@ -745,6 +1212,14 @@ def build_limit_bracket_signal_event(
                     "breakout_level": str(signal.breakout_level),
                     "atr": str(signal.atr),
                     "stop_distance": str(signal.stop_distance),
+                    "strategy_family": signal.strategy_family,
+                    "daily_direction": signal.daily_direction,
+                    "consecutive_green_1h": signal.consecutive_green_1h,
+                    "prior_consecutive_green_1h": signal.prior_consecutive_green_1h,
+                    "volume_multiple": signal.volume_multiple,
+                    "rejection_fraction": signal.rejection_fraction,
+                    "relative_return": signal.relative_return,
+                    "funding_rate": str(signal.funding_rate) if signal.funding_rate is not None else None,
                 },
             }
         )
@@ -794,10 +1269,18 @@ def build_limit_bracket_signal_event(
             "cancel_on_regime_flip": spec.cancel_on_regime_flip,
             "limit_expiry_bars": spec.limit_expiry_bars,
             "max_holding_days": spec.max_holding_days,
+            **(
+                {"max_holding_hours": spec.max_holding_hours}
+                if spec.max_holding_hours is not None
+                else {}
+            ),
             "stop_target_same_bar_policy": "stop_first",
             "strategy_status": "research_candidate_only",
         },
-        "strategy": asdict(spec),
+        "strategy": {
+            **asdict(spec),
+            "funding_data_available": bool(funding_rates),
+        },
     }
 
 
@@ -936,7 +1419,8 @@ def run_limit_bracket_backtest(
             holding_days = (timestamp - datetime.fromisoformat(position.entry_timestamp)).total_seconds() / 86_400.0
             reason: str | None = None
             raw_exit: Decimal | None = None
-            if holding_days >= spec.max_holding_days:
+            max_holding_hours = spec.max_holding_hours if spec.max_holding_hours is not None else spec.max_holding_days * 24
+            if holding_days * 24 >= max_holding_hours:
                 reason, raw_exit = "time_stop", bar.open
             else:
                 stop_hit = bar.low <= position.stop_price if position.direction == "long" else bar.high >= position.stop_price
@@ -1043,7 +1527,7 @@ def run_limit_bracket_backtest(
         gross_curve.append((timestamp.isoformat(), _safe_float(float(gross))))
 
         if index >= start_index:
-            fresh = _find_signals(aligned, views, index, timestamps, spec, benchmark)
+            fresh = _find_signals(aligned, views, index, timestamps, spec, benchmark, funding_rates)
             for signal in fresh:
                 if signal.symbol in positions or signal.symbol in pending:
                     continue
@@ -1307,7 +1791,12 @@ def limit_bracket_research_report(
             },
             "entry": "long limit = signal close - ATR * entry_offset; short limit = signal close + ATR * entry_offset; no market fallback; better opening gaps are filled at open",
             "bracket": "filled entry attaches an ATR stop trigger and R-multiple take-profit limit; stop is checked first when both are touched",
-            "order_lifetime": f"unfilled parent limit expires after the configured bars; max holding period is capped at {max(spec.max_holding_days for spec in specs)} days and never exceeds 30 days",
+            "order_lifetime": (
+                "unfilled parent limit expires after the configured bars; "
+                f"max holding period is capped at {max(spec.max_holding_days for spec in specs)} days "
+                f"and {max((spec.max_holding_hours or spec.max_holding_days * 24) for spec in specs):g} hours "
+                "per strategy, never exceeding 30 days"
+            ),
             "market": market,
             "funding_rates_included": bool(funding_rates),
             "margin_interest_bps_per_day": str(config.margin_interest_bps_per_day),

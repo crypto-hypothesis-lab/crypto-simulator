@@ -5,6 +5,7 @@ from crypto_simulator.adapters.binance import BinanceAdapter
 from crypto_simulator.adapters.bitbank import BitbankAdapter
 from crypto_simulator.adapters.gmo_coin import GmoCoinAdapter
 from crypto_simulator.adapters.hyperliquid import HyperliquidAdapter
+from crypto_simulator.adapters.mexc_contract import MexcContractAdapter
 from crypto_simulator.adapters.http import PublicApiError
 
 
@@ -96,3 +97,111 @@ def test_gmo_maintenance_is_fail_closed() -> None:
         assert "MAINTENANCE" in str(error)
     else:
         raise AssertionError("maintenance response must fail closed")
+
+
+def test_mexc_contract_kline_shape_is_normalized() -> None:
+    client = FakeClient(
+        {
+            "success": True,
+            "data": {
+                "time": [1_700_000_000, 1_700_003_600],
+                "open": ["1", "1.5"],
+                "high": ["2", "2.5"],
+                "low": ["0.5", "1.25"],
+                "close": ["1.5", "2"],
+                "vol": ["3", "4"],
+                "amount": ["4.5", "8"],
+            },
+        }
+    )
+    start = datetime.fromtimestamp(1_700_000_000, timezone.utc)
+    end = datetime.fromtimestamp(1_700_003_600, timezone.utc)
+    bars = MexcContractAdapter(client).fetch_ohlcv("BTCUSDT", "1h", start=start, end=end)
+
+    assert len(bars) == 2
+    assert bars[0].exchange == "mexc"
+    assert bars[0].symbol == "BTC_USDT"
+    assert bars[0].market_type == "perpetual"
+    assert bars[0].quote_volume == Decimal("4.5")
+    assert "interval=Min60" in client.urls[0]
+
+
+def test_mexc_ticker_shape_is_normalized() -> None:
+    client = FakeClient(
+        {
+            "success": True,
+            "data": [
+                {
+                    "symbol": "ETH_USDT",
+                    "lastPrice": "2000",
+                    "bid1": "1999.5",
+                    "ask1": "2000.5",
+                    "amount24": "12000000",
+                    "volume24": "6000",
+                    "holdVol": "100000",
+                    "timestamp": 1_700_000_000_000,
+                }
+            ],
+        }
+    )
+    ticker = MexcContractAdapter(client).fetch_tickers()[0]
+
+    assert ticker.symbol == "ETH_USDT"
+    assert ticker.amount_24h == Decimal("12000000")
+    assert ticker.spread_bps == Decimal("5.00")
+    assert client.urls == [MexcContractAdapter.ticker_endpoint]
+
+
+def test_mexc_contract_detail_marks_tradfi_contracts() -> None:
+    client = FakeClient(
+        {
+            "success": True,
+            "data": [
+                {
+                    "symbol": "BTC_USDT",
+                    "baseCoin": "BTC",
+                    "quoteCoin": "USDT",
+                    "settleCoin": "USDT",
+                    "state": 0,
+                    "isHidden": False,
+                    "conceptPlate": ["mc-trade-zone-layer2"],
+                },
+                {
+                    "symbol": "SOXL_USDT",
+                    "baseCoin": "SOXL",
+                    "quoteCoin": "USDT",
+                    "settleCoin": "USDT",
+                    "state": 0,
+                    "isHidden": False,
+                    "conceptPlate": ["mc-trade-zone-Stock", "mc-trade-zone-ETF"],
+                },
+            ],
+        }
+    )
+
+    details = {item.symbol: item for item in MexcContractAdapter(client).fetch_contract_details()}
+
+    assert details["BTC_USDT"].is_crypto_perpetual is True
+    assert details["SOXL_USDT"].is_crypto_perpetual is False
+
+
+def test_mexc_contract_funding_shape_is_normalized() -> None:
+    client = FakeClient(
+        {
+            "success": True,
+            "data": {
+                "totalPage": 1,
+                "resultList": [
+                    {"symbol": "BTC_USDT", "fundingRate": "0.0001", "settleTime": 1_700_000_000_000},
+                ],
+            },
+        }
+    )
+    start = datetime.fromtimestamp(1_699_999_000, timezone.utc)
+    end = datetime.fromtimestamp(1_700_001_000, timezone.utc)
+    points = MexcContractAdapter(client).fetch_funding("BTCUSDT", start=start, end=end)
+
+    assert len(points) == 1
+    assert points[0].exchange == "mexc"
+    assert points[0].symbol == "BTC_USDT"
+    assert points[0].rate == Decimal("0.0001")
