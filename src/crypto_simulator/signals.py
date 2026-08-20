@@ -8,6 +8,25 @@ from .strategy import MultiTimeframeSignal, MultiTimeframeStrategy, SmaCrossStra
 from .timeframes import interval_duration, resample_ohlcv
 
 
+SIGNAL_SCHEMA_VERSION = "crypto.signal.v1"
+
+
+def _signal_identity(*, latest: OHLCVBar, interval: str, strategy_id: str, action: str, candle_close_at: datetime) -> tuple[str, str]:
+    """Build a stable identity for one closed-candle decision."""
+
+    signal_key = ":".join(
+        (
+            latest.exchange,
+            latest.symbol,
+            interval,
+            candle_close_at.astimezone(timezone.utc).isoformat(),
+            strategy_id,
+            action,
+        )
+    )
+    return signal_key, signal_key
+
+
 def closed_bars(
     bars: list[OHLCVBar],
     interval: str,
@@ -59,15 +78,28 @@ def build_signal_event(
             f"__4h_sma_{trend_fast_window}_{trend_slow_window}"
             f"__1d_sma_{regime_fast_window}_{regime_slow_window}"
         )
+    execution_duration = interval_duration(interval)
+    candle_close_at = latest.timestamp + execution_duration
+    signal_key, event_id = _signal_identity(
+        latest=latest,
+        interval=interval,
+        strategy_id=strategy_id,
+        action=signal.action,
+        candle_close_at=candle_close_at,
+    )
     event: dict[str, Any] = {
-        "event_id": f"{latest.exchange}:{latest.symbol}:{latest.epoch_ms}:{strategy_id}",
+        "schema_version": SIGNAL_SCHEMA_VERSION,
+        "event_id": event_id,
+        "signal_key": signal_key,
         "event_type": "PAPER_SIGNAL",
         "strategy_id": strategy_id,
+        "strategy_version": strategy_id,
         "exchange": latest.exchange,
         "symbol": latest.symbol,
         "market_type": latest.market_type,
         "interval": interval,
         "timestamp": latest.timestamp.isoformat(),
+        "candle_close_at": candle_close_at.isoformat(),
         "price": str(latest.close),
         "action": signal.action,
         "reason": signal.reason,
@@ -77,7 +109,6 @@ def build_signal_event(
         return event
 
     assert isinstance(signal, MultiTimeframeSignal)
-    execution_duration = interval_duration(interval)
     execution_timestamp = latest.timestamp + execution_duration
     next_bars = [bar for bar in sorted(bars, key=lambda item: item.timestamp) if bar.timestamp == execution_timestamp]
     if not next_bars:

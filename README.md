@@ -196,6 +196,12 @@ populate Cloudflare/GitHub secrets. Until that runtime wiring is configured,
 this command remains a research snapshot and must not be treated as a
 live-order instruction.
 
+The regular `signal` command emits `crypto.signal.v1`. Its
+`candle_close_at`, `strategy_version`, `signal_key`, and `event_id` identify a
+single closed-candle decision deterministically. Private consumers should use
+that identity for retry-safe processing; the forming candle is never used as
+the decision candle.
+
 The handoff rules and machine-readable contract are documented in
 [`docs/operations-integration.md`](docs/operations-integration.md) and
 [`docs/crypto-bracket-signal-v1.schema.json`](docs/crypto-bracket-signal-v1.schema.json).
