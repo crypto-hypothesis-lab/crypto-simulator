@@ -1,7 +1,7 @@
 {
   "schema_version": "crypto.bracket-signal.v1",
   "event_type": "crypto_investment_decision",
-  "generated_at": "2026-08-20T07:00:15.235243+00:00",
+  "generated_at": "2026-08-20T07:50:10.062337+00:00",
   "idempotency_key": "decision:spot_limit_retest_balanced_0p35_1p5_2R_14d:2026-08-20T07:00:00+00:00:spot",
   "source": {
     "exchange": [
