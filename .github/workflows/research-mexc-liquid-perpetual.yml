@@ -180,8 +180,8 @@ jobs:
           $MEXC_ELIGIBLE_FUNDING_ARGS
           --benchmark-symbol BTC_USDT
           --train-days 180
-          --test-days 60
-          --step-days 60
+          --test-days 30
+          --step-days 30
           --fee-bps 5
           --slippage-bps 5
           --spread-bps 10
