@@ -5,7 +5,10 @@ from crypto_simulator.limit_bracket import (
     LimitBracketSignal,
     LimitBracketSpec,
     build_limit_bracket_signal_event,
+    default_mexc_event_specs,
     _build_timeframe_view,
+    _MarketContext,
+    _event_filter_passes,
     _limit_fill,
     _take_profit_fill,
 )
@@ -47,6 +50,56 @@ def test_spec_never_allows_more_than_one_month() -> None:
         assert "30" in str(exc)
     else:
         raise AssertionError("max holding period should be capped at 30 days")
+
+
+def test_mexc_event_specs_are_explicit_and_short_horizon() -> None:
+    short, long, rejection = default_mexc_event_specs("perpetual")
+    assert short.strategy_family == "mexc_event_short"
+    assert short.event_only is True
+    assert short.required_regime == "risk_off"
+    assert short.required_daily_direction == "RED"
+    assert (short.min_consecutive_green_1h, short.max_consecutive_green_1h) == (3, 4)
+    assert short.min_relative_return == 0.05
+    assert short.min_funding_rate == -0.0005
+    assert short.max_holding_hours == 8
+    assert short.risk_per_trade == 0.001
+    assert long.strategy_family == "mexc_event_long_pullback"
+    assert long.required_regime == "risk_on"
+    assert long.max_holding_hours == 8
+    assert rejection.strategy_family == "mexc_event_short_rejection_volume"
+    assert rejection.min_volume_multiple == 1.5
+    assert rejection.require_rejection_candle is True
+    assert rejection.min_rejection_fraction == 0.55
+    assert (rejection.min_prior_consecutive_green_1h, rejection.max_prior_consecutive_green_1h) == (3, 6)
+    assert rejection.max_gross_leverage == 5.0
+
+
+def test_rejection_volume_event_requires_causal_confirmation_features() -> None:
+    spec = default_mexc_event_specs("perpetual")[2]
+    context = _MarketContext("risk_off", 0.2)
+    passing = {
+        "daily_direction": "RED",
+        "consecutive_green_1h": 0,
+        "prior_consecutive_green_1h": 4,
+        "volume_multiple": 1.8,
+        "is_red_candle": True,
+        "rejection_fraction": 0.7,
+        "relative_return": 0.05,
+        "funding_rate": Decimal("0"),
+    }
+    assert _event_filter_passes(context, spec, passing) is True
+    assert _event_filter_passes(context, spec, {**passing, "volume_multiple": 1.2}) is False
+    assert _event_filter_passes(context, spec, {**passing, "is_red_candle": False}) is False
+    assert _event_filter_passes(context, spec, {**passing, "rejection_fraction": 0.4}) is False
+
+
+def test_spec_rejects_unbounded_short_term_holding() -> None:
+    try:
+        LimitBracketSpec("too_short", max_holding_hours=0)
+    except ValueError as exc:
+        assert "720" in str(exc)
+    else:
+        raise AssertionError("zero-hour holding period should be rejected")
 
 
 def test_signal_event_is_safe_no_trade_snapshot_during_warmup() -> None:

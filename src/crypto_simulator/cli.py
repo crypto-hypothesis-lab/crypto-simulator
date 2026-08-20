@@ -8,16 +8,19 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
-from .adapters import BinanceAdapter, BitbankAdapter, CcxtPublicAdapter, GmoCoinAdapter, HyperliquidAdapter
+from .adapters import BinanceAdapter, BitbankAdapter, CcxtPublicAdapter, GmoCoinAdapter, HyperliquidAdapter, MexcContractAdapter
 from .backtest import BacktestConfig, run_backtest
 from .dataset import load_funding_json, load_ohlcv_csv, merge_ohlcv_csv, write_funding_json, write_ohlcv_csv
 from .models import OHLCVBar
 from .portfolio import PortfolioConfig, default_theme_specs, funding_rates_by_interval, portfolio_research_report
+from .promotion import PromotionPolicy, evaluate_promotion_gate
+from .mexc_liquidity import LiquidityPolicy, assess_liquidity, build_liquidity_manifest, select_current_liquid_tickers
 from .research import StrategySpec, forward_test_report, research_report
 from .spike_fade import default_spike_fade_specs, spike_fade_research_report
 from .limit_bracket import (
     build_limit_bracket_signal_event,
     default_limit_bracket_specs,
+    default_mexc_event_specs,
     limit_bracket_research_report,
 )
 from .signals import build_signal_event
@@ -39,7 +42,7 @@ def _adapter(name: str, ccxt_id: str | None = None):
         if not ccxt_id:
             raise ValueError("--ccxt-id is required when --exchange ccxt is used")
         return CcxtPublicAdapter(ccxt_id)
-    return {"binance": BinanceAdapter, "hyperliquid": HyperliquidAdapter, "bitbank": BitbankAdapter, "gmo": GmoCoinAdapter}[name]()
+    return {"binance": BinanceAdapter, "hyperliquid": HyperliquidAdapter, "bitbank": BitbankAdapter, "gmo": GmoCoinAdapter, "mexc": MexcContractAdapter}[name]()
 
 
 def _write_csv(path: Path, bars: list[OHLCVBar]) -> None:
@@ -49,6 +52,25 @@ def _write_csv(path: Path, bars: list[OHLCVBar]) -> None:
 def _write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _load_named_universe(parsed_inputs: list[tuple[str, Path]]) -> tuple[dict[str, list[OHLCVBar]], dict[str, str]]:
+    """Load each CSV under its canonical in-file symbol and retain CLI aliases."""
+
+    universe: dict[str, list[OHLCVBar]] = {}
+    aliases: dict[str, str] = {}
+    for requested_symbol, path in parsed_inputs:
+        bars = load_ohlcv_csv(path)
+        symbols = {bar.symbol for bar in bars}
+        if len(symbols) != 1:
+            raise ValueError(f"{path} must contain exactly one symbol")
+        canonical_symbol = next(iter(symbols))
+        if canonical_symbol in universe:
+            raise ValueError(f"duplicate canonical symbol in inputs: {canonical_symbol}")
+        universe[canonical_symbol] = bars
+        aliases[requested_symbol.upper()] = canonical_symbol
+        aliases[canonical_symbol.upper()] = canonical_symbol
+    return universe, aliases
 
 
 def _add_strategy_arguments(command: argparse.ArgumentParser) -> None:
@@ -132,19 +154,37 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("demo")
     fetch = subparsers.add_parser("fetch")
-    fetch.add_argument("--exchange", choices=["binance", "hyperliquid", "bitbank", "gmo", "ccxt"], required=True)
+    fetch.add_argument("--exchange", choices=["binance", "hyperliquid", "bitbank", "gmo", "mexc", "ccxt"], required=True)
     fetch.add_argument("--ccxt-id")
     fetch.add_argument("--symbol", required=True)
     fetch.add_argument("--interval", required=True)
     _add_window_arguments(fetch)
     fetch.add_argument("--output", type=Path, required=True)
     fetch_funding = subparsers.add_parser("fetch-funding", help="fetch public HyperLiquid perpetual funding history")
-    fetch_funding.add_argument("--exchange", choices=["hyperliquid"], default="hyperliquid")
+    fetch_funding.add_argument("--exchange", choices=["hyperliquid", "mexc"], default="hyperliquid")
     fetch_funding.add_argument("--symbol", required=True)
     _add_window_arguments(fetch_funding)
     fetch_funding.add_argument("--output", type=Path, required=True)
+    mexc_liquid = subparsers.add_parser("mexc-liquid-select", help="select current MEXC perpetuals by public liquidity")
+    mexc_liquid.add_argument("--output", type=Path, required=True)
+    mexc_liquid.add_argument("--max-symbols", type=int, default=12)
+    mexc_liquid.add_argument("--min-quote-turnover-24h", type=Decimal, default=Decimal("10000000"))
+    mexc_liquid.add_argument("--max-spread-bps", type=Decimal, default=Decimal("25"))
+    mexc_liquid.add_argument("--benchmark-symbol", default="BTC_USDT")
+    mexc_liquid.add_argument("--exclude-symbol", action="append", default=[])
+    mexc_audit = subparsers.add_parser("mexc-liquidity-audit", help="audit historical MEXC quote turnover and volume regime")
+    mexc_audit.add_argument("--selection", type=Path, required=True)
+    mexc_audit.add_argument("--input", dest="inputs", action="append", required=True, metavar="SYMBOL=CSV_PATH")
+    mexc_audit.add_argument("--output", type=Path, required=True)
+    mexc_audit.add_argument("--interval", default="1hour")
+    mexc_audit.add_argument("--max-symbols", type=int, default=12)
+    mexc_audit.add_argument("--min-quote-turnover-24h", type=Decimal, default=Decimal("10000000"))
+    mexc_audit.add_argument("--min-median-daily-quote-turnover", type=Decimal, default=Decimal("5000000"))
+    mexc_audit.add_argument("--max-spread-bps", type=Decimal, default=Decimal("25"))
+    mexc_audit.add_argument("--min-history-bars", type=int, default=6000)
+    mexc_audit.add_argument("--min-coverage", type=float, default=0.98)
     collect = subparsers.add_parser("collect", help="fetch and merge a rolling public dataset")
-    collect.add_argument("--exchange", choices=["binance", "hyperliquid", "bitbank", "gmo", "ccxt"], default="bitbank")
+    collect.add_argument("--exchange", choices=["binance", "hyperliquid", "bitbank", "gmo", "mexc", "ccxt"], default="bitbank")
     collect.add_argument("--ccxt-id")
     collect.add_argument("--symbol", default="btc_jpy")
     collect.add_argument("--interval", default="1hour")
@@ -223,6 +263,7 @@ def main() -> None:
     spike_fade.add_argument("--max-leverage-map", type=Path, help="JSON object mapping symbols to exchange leverage caps")
     limit_bracket = subparsers.add_parser("limit-bracket-research", help="research multi-timeframe limit-entry bracket strategies")
     limit_bracket.add_argument("--market", choices=["spot", "margin", "perpetual"], required=True)
+    limit_bracket.add_argument("--profile", choices=["standard", "mexc-event"], default="standard")
     limit_bracket.add_argument("--input", dest="inputs", action="append", required=True, metavar="SYMBOL=CSV_PATH")
     limit_bracket.add_argument("--funding", dest="fundings", action="append", type=Path, help="funding JSON from fetch-funding; repeat per symbol")
     limit_bracket.add_argument("--benchmark-symbol")
@@ -243,9 +284,14 @@ def main() -> None:
     bracket_signal.add_argument("--market", choices=["spot", "margin", "perpetual"], required=True)
     bracket_signal.add_argument("--input", dest="inputs", action="append", required=True, metavar="SYMBOL=CSV_PATH")
     bracket_signal.add_argument("--benchmark-symbol")
+    bracket_signal.add_argument("--funding", dest="fundings", action="append", type=Path, help="funding JSON from fetch-funding; repeat per symbol")
     bracket_signal.add_argument("--output", type=Path, default=Path("state/latest-bracket-signal.json"))
     bracket_signal.add_argument("--interval", default="1hour")
-    bracket_signal.add_argument("--profile", choices=["fast", "balanced", "deep"], default="balanced")
+    bracket_signal.add_argument(
+        "--profile",
+        choices=["fast", "balanced", "deep", "mexc-short", "mexc-long", "mexc-short-rejection"],
+        default="balanced",
+    )
     bracket_signal.add_argument("--max-gross-leverage", type=Decimal)
     bracket_signal.add_argument("--max-leverage-map", type=Path, help="JSON object mapping symbols to exchange leverage caps")
     signal = subparsers.add_parser("signal", help="write a paper-trading signal from the latest closed candle")
@@ -262,11 +308,102 @@ def main() -> None:
     duckdb_import = subparsers.add_parser("duckdb-import", help="import normalized CSV candles into local DuckDB")
     duckdb_import.add_argument("--input", type=Path, required=True)
     duckdb_import.add_argument("--database", type=Path, default=Path("data/crypto-market.duckdb"))
+    promotion = subparsers.add_parser("promotion-gate", help="evaluate a causal cost-aware Paper promotion gate")
+    promotion.add_argument("--input", type=Path, required=True, help="JSON array or object with an outcomes array")
+    promotion.add_argument("--output", type=Path, default=Path("state/promotion-gate.json"))
+    promotion.add_argument("--cost-reserve", type=float, default=0.0051)
+    promotion.add_argument("--minimum-net-ev", type=float, default=0.002)
+    promotion.add_argument("--minimum-distinct-days", type=int, default=30)
     args = parser.parse_args()
 
     if args.command == "demo":
         result = run_backtest(synthetic_bars(), SmaCrossStrategy(5, 20), BacktestConfig(initial_cash=Decimal("100000")))
         print(f"trades={len(result.trades)} final_equity={result.final_equity} return={result.return_fraction:.4%}")
+        return
+
+    if args.command == "promotion-gate":
+        try:
+            payload = json.loads(args.input.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            parser.error(f"invalid promotion input: {exc}")
+        outcomes = payload.get("outcomes") if isinstance(payload, dict) else payload
+        if not isinstance(outcomes, list) or not all(isinstance(item, dict) for item in outcomes):
+            parser.error("promotion input must be a JSON array or an object with an outcomes array")
+        report = evaluate_promotion_gate(
+            outcomes,
+            PromotionPolicy(
+                cost_reserve=args.cost_reserve,
+                minimum_net_effective_ev=args.minimum_net_ev,
+                minimum_distinct_days=args.minimum_distinct_days,
+            ),
+        )
+        _write_json(args.output, report)
+        print(f"saved={args.output} decision={report['decision']} outcomes={report['outcome_count']}")
+        return
+
+    if args.command == "mexc-liquid-select":
+        policy = LiquidityPolicy(
+            max_symbols=args.max_symbols,
+            min_quote_turnover_24h=args.min_quote_turnover_24h,
+            max_spread_bps=args.max_spread_bps,
+        )
+        tickers = MexcContractAdapter().fetch_tickers()
+        details = {item.symbol: item for item in MexcContractAdapter().fetch_contract_details()}
+        selected = select_current_liquid_tickers(
+            tickers,
+            policy=policy,
+            benchmark_symbol=args.benchmark_symbol,
+            excluded_symbols=args.exclude_symbol,
+            contract_details=details,
+        )
+        report = build_liquidity_manifest(selected, policy=policy, benchmark_symbol=args.benchmark_symbol)
+        report["ticker_count"] = len(tickers)
+        _write_json(args.output, report)
+        print(f"saved={args.output} selected={len(selected)} tickers={len(tickers)}")
+        return
+
+    if args.command == "mexc-liquidity-audit":
+        try:
+            parsed_inputs = [_parse_portfolio_input(value) for value in args.inputs]
+            selection = json.loads(args.selection.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            parser.error(f"invalid MEXC liquidity input: {exc}")
+        if not isinstance(selection, dict) or not isinstance(selection.get("symbols"), list):
+            parser.error("MEXC selection must contain a symbols array")
+        universe, _ = _load_named_universe(parsed_inputs)
+        selected_rows = {str(row.get("symbol")): row for row in selection["symbols"] if isinstance(row, dict) and row.get("symbol")}
+        assessments = {}
+        for symbol, bars in universe.items():
+            row = selected_rows.get(symbol)
+            if row is None:
+                parser.error(f"history input is not present in selection: {symbol}")
+            spread = Decimal(str(row.get("spread_bps", "999999")))
+            assessments[symbol] = assess_liquidity(
+                symbol,
+                bars,
+                interval=args.interval,
+                policy=LiquidityPolicy(
+                    max_symbols=args.max_symbols,
+                    min_quote_turnover_24h=args.min_quote_turnover_24h,
+                    min_median_daily_quote_turnover=args.min_median_daily_quote_turnover,
+                    max_spread_bps=args.max_spread_bps,
+                    min_history_bars=args.min_history_bars,
+                    min_coverage=args.min_coverage,
+                ),
+                spread_bps=spread,
+            )
+        for row in selection["symbols"]:
+            if isinstance(row, dict) and row.get("symbol") in assessments:
+                row["history"] = assessments[row["symbol"]].to_dict()
+        benchmark = str(selection.get("benchmark_symbol", "BTC_USDT"))
+        eligible = [row["symbol"] for row in selection["symbols"] if isinstance(row, dict) and row.get("history", {}).get("passed")]
+        if benchmark not in eligible:
+            parser.error("benchmark did not pass historical liquidity audit")
+        selection["eligible_symbols"] = eligible[: args.max_symbols]
+        selection["rejected_symbols"] = [row["symbol"] for row in selection["symbols"] if row["symbol"] not in selection["eligible_symbols"]]
+        selection["historical_audit"] = True
+        _write_json(args.output, selection)
+        print(f"saved={args.output} eligible={len(selection['eligible_symbols'])} rejected={len(selection['rejected_symbols'])}")
         return
 
     if args.command == "backtest":
@@ -351,17 +488,17 @@ def main() -> None:
             parsed_inputs = [_parse_portfolio_input(value) for value in args.inputs]
         except ValueError as exc:
             parser.error(str(exc))
-        universe = {symbol: load_ohlcv_csv(path) for symbol, path in parsed_inputs}
+        universe, symbol_aliases = _load_named_universe(parsed_inputs)
         specs = default_theme_specs(args.market)
         if args.benchmark_symbol:
-            specs = [replace(spec, benchmark_symbol=args.benchmark_symbol) for spec in specs]
+            benchmark_symbol = symbol_aliases.get(args.benchmark_symbol.upper(), args.benchmark_symbol)
+            specs = [replace(spec, benchmark_symbol=benchmark_symbol) for spec in specs]
         funding_rates = None
         if args.fundings:
             points = [point for path in args.fundings for point in load_funding_json(path)]
             funding_rates = funding_rates_by_interval(points, args.interval)
-            aliases = {symbol.upper(): symbol for symbol in universe}
             funding_rates = {
-                aliases.get(symbol.upper(), symbol): rates
+                symbol_aliases.get(symbol.upper(), symbol): rates
                 for symbol, rates in funding_rates.items()
             }
         leverage = args.max_gross_leverage
@@ -413,14 +550,13 @@ def main() -> None:
             parsed_inputs = [_parse_portfolio_input(value) for value in args.inputs]
         except ValueError as exc:
             parser.error(str(exc))
-        universe = {symbol: load_ohlcv_csv(path) for symbol, path in parsed_inputs}
+        universe, symbol_aliases = _load_named_universe(parsed_inputs)
         funding_rates = None
         if args.fundings:
             points = [point for path in args.fundings for point in load_funding_json(path)]
             funding_rates = funding_rates_by_interval(points, args.interval)
-            aliases = {symbol.upper(): symbol for symbol in universe}
             funding_rates = {
-                aliases.get(symbol.upper(), symbol): rates
+                symbol_aliases.get(symbol.upper(), symbol): rates
                 for symbol, rates in funding_rates.items()
             }
         leverage = args.max_gross_leverage or Decimal("2")
@@ -438,7 +574,7 @@ def main() -> None:
             market=args.market,
             specs=default_spike_fade_specs(args.market),
             funding_rates=funding_rates,
-            benchmark_symbol=args.benchmark_symbol,
+            benchmark_symbol=symbol_aliases.get(args.benchmark_symbol.upper(), args.benchmark_symbol) if args.benchmark_symbol else None,
             max_leverage_by_symbol=leverage_map,
             interval=args.interval,
             train_days=args.train_days,
@@ -468,13 +604,12 @@ def main() -> None:
             parsed_inputs = [_parse_portfolio_input(value) for value in args.inputs]
         except ValueError as exc:
             parser.error(str(exc))
-        universe = {symbol: load_ohlcv_csv(path) for symbol, path in parsed_inputs}
+        universe, symbol_aliases = _load_named_universe(parsed_inputs)
         funding_rates = None
         if args.fundings:
             points = [point for path in args.fundings for point in load_funding_json(path)]
             funding_rates = funding_rates_by_interval(points, args.interval)
-            aliases = {symbol.upper(): symbol for symbol in universe}
-            funding_rates = {aliases.get(symbol.upper(), symbol): rates for symbol, rates in funding_rates.items()}
+            funding_rates = {symbol_aliases.get(symbol.upper(), symbol): rates for symbol, rates in funding_rates.items()}
         leverage = args.max_gross_leverage
         if leverage is None:
             leverage = Decimal("1") if args.market == "spot" else Decimal("2") if args.market == "margin" else Decimal("5")
@@ -490,13 +625,14 @@ def main() -> None:
                 leverage_map = {str(symbol): Decimal(str(value)) for symbol, value in payload.items()}
             except (OSError, json.JSONDecodeError, ValueError) as exc:
                 parser.error(f"invalid --max-leverage-map: {exc}")
+        specs = default_mexc_event_specs(args.market) if args.profile == "mexc-event" else default_limit_bracket_specs(args.market)
         report = limit_bracket_research_report(
             universe,
             market=args.market,
-            specs=default_limit_bracket_specs(args.market),
+            specs=specs,
             interval=args.interval,
             funding_rates=funding_rates,
-            benchmark_symbol=args.benchmark_symbol,
+            benchmark_symbol=symbol_aliases.get(args.benchmark_symbol.upper(), args.benchmark_symbol) if args.benchmark_symbol else None,
             max_leverage_by_symbol=leverage_map,
             train_days=args.train_days,
             test_days=args.test_days,
@@ -525,7 +661,7 @@ def main() -> None:
             parsed_inputs = [_parse_portfolio_input(value) for value in args.inputs]
         except ValueError as exc:
             parser.error(str(exc))
-        universe = {symbol: load_ohlcv_csv(path) for symbol, path in parsed_inputs}
+        universe, symbol_aliases = _load_named_universe(parsed_inputs)
         leverage = args.max_gross_leverage
         if leverage is None:
             leverage = Decimal("1") if args.market == "spot" else Decimal("2") if args.market == "margin" else Decimal("5")
@@ -538,17 +674,31 @@ def main() -> None:
                 leverage_map = {str(symbol): Decimal(str(value)) for symbol, value in payload.items()}
             except (OSError, json.JSONDecodeError, ValueError) as exc:
                 parser.error(f"invalid --max-leverage-map: {exc}")
-        profiles = {"fast": 0, "balanced": 1, "deep": 2}
-        spec = default_limit_bracket_specs(args.market)[profiles[args.profile]]
+        if args.profile in {"mexc-short", "mexc-long", "mexc-short-rejection"}:
+            event_specs = default_mexc_event_specs(args.market)
+            spec = {
+                "mexc-short": event_specs[0],
+                "mexc-long": event_specs[1],
+                "mexc-short-rejection": event_specs[2],
+            }[args.profile]
+        else:
+            profiles = {"fast": 0, "balanced": 1, "deep": 2}
+            spec = default_limit_bracket_specs(args.market)[profiles[args.profile]]
+        funding_rates = None
+        if args.fundings:
+            points = [point for path in args.fundings for point in load_funding_json(path)]
+            funding_rates = funding_rates_by_interval(points, args.interval)
+            funding_rates = {symbol_aliases.get(symbol.upper(), symbol): rates for symbol, rates in funding_rates.items()}
         event = build_limit_bracket_signal_event(
             universe,
             spec,
             interval=args.interval,
-            benchmark_symbol=args.benchmark_symbol,
+            benchmark_symbol=symbol_aliases.get(args.benchmark_symbol.upper(), args.benchmark_symbol) if args.benchmark_symbol else None,
             config=PortfolioConfig(
                 max_gross_leverage=leverage,
                 max_leverage_by_symbol=leverage_map,
             ),
+            funding_rates=funding_rates,
         )
         _write_json(args.output, event)
         print(
@@ -578,7 +728,11 @@ def main() -> None:
             start, end = _resolve_window(args)
         except ValueError as exc:
             parser.error(str(exc))
-        points = HyperliquidAdapter().fetch_funding(args.symbol, start=start, end=end)
+        points = (
+            MexcContractAdapter().fetch_funding(args.symbol, start=start, end=end)
+            if args.exchange == "mexc"
+            else HyperliquidAdapter().fetch_funding(args.symbol, start=start, end=end)
+        )
         write_funding_json(args.output, points)
         print(f"saved={args.output} points={len(points)}")
         return

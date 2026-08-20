@@ -127,6 +127,7 @@
           },
           "expires_at": { "type": "string", "format": "date-time" },
           "max_holding_days": { "type": "integer", "minimum": 1, "maximum": 30 },
+          "max_holding_hours": { "type": "number", "exclusiveMinimum": 0, "maximum": 720 },
           "risk": {
             "type": "object",
             "required": ["risk_per_trade", "sizing", "max_gross_leverage", "symbol_leverage_cap", "requires_current_equity_and_positions"],
@@ -160,6 +161,7 @@
         "cancel_on_regime_flip": { "type": "boolean" },
         "limit_expiry_bars": { "type": "integer", "minimum": 1 },
         "max_holding_days": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "max_holding_hours": { "type": "number", "exclusiveMinimum": 0, "maximum": 720 },
         "stop_target_same_bar_policy": { "const": "stop_first" },
         "strategy_status": { "const": "research_candidate_only" }
       },

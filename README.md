@@ -6,7 +6,7 @@ This repository is intentionally safe to publish. It contains no API keys, priva
 
 ## Current scope
 
-- Public OHLCV adapters for Binance, Hyperliquid, bitbank, and GMO Coin.
+- Public OHLCV adapters for Binance, Hyperliquid, bitbank, GMO Coin, and MEXC perpetuals.
 - One normalized `OHLCVBar` model with UTC timestamps and decimal prices.
 - A no-lookahead long-only multi-timeframe SMA backtester.
 - A three-layer decision model: 1-hour execution, 4-hour trend filter, and 1-day regime filter.
@@ -61,6 +61,8 @@ python -m crypto_simulator fetch --exchange hyperliquid --symbol BTC --interval 
 python -m crypto_simulator fetch --exchange bitbank --symbol btc_jpy --interval 1hour --hours 72 --output data/btc_jpy.csv
 python -m crypto_simulator fetch --exchange gmo --symbol BTC --interval 1hour --hours 72 --output data/gmo_btc.csv
 python -m crypto_simulator fetch --exchange binance --symbol BTCUSDT --interval 1h --days 365 --output data/binance_btcusdt_1h.csv
+python -m crypto_simulator fetch --exchange mexc --symbol BTC_USDT --interval 4h --days 365 --output data/mexc/BTC_USDT_4h.csv
+python -m crypto_simulator fetch-funding --exchange mexc --symbol BTC_USDT --days 365 --output data/mexc/BTC_USDT_funding.json
 # Reproducible long-history fetch (UTC window):
 python -m crypto_simulator fetch --exchange bitbank --symbol btc_jpy --interval 1hour --start 2025-08-15T00:00:00Z --end 2026-08-15T00:00:00Z --output data/bitbank_btc_jpy_1year.csv
 ```
@@ -106,6 +108,18 @@ example with `--spread-bps 10 --market-impact-bps 5`. The report marks a result
 return and the median OOS excess return is positive; fewer than six qualifying
 windows are still treated as low statistical power.
 
+MEXC perpetual research uses the public contract API. The `portfolio-research`
+command can run long/short candidates with a gross-exposure cap up to 5x and
+MEXC funding settlements supplied via `--funding`. A 5x value is a hard ceiling,
+not a recommendation to maintain 5x exposure; the ATR bracket researcher also
+limits risk per trade and may use much less exposure.
+
+The event-filtered MEXC bracket candidates are selected explicitly with
+`limit-bracket-research --profile mexc-event`. For a latest Paper snapshot,
+use `limit-bracket-signal --profile mexc-short` or `--profile mexc-long` and
+provide Funding JSON; both profiles remain research candidates until the
+cost-aware `promotion-gate` passes.
+
 `forward-test` takes one already-frozen strategy configuration and evaluates
 only the latest holdout window. Earlier candles are indicator warm-up and
 cannot create reported trades. The JSON is deliberately marked
@@ -147,6 +161,16 @@ per-asset leverage caps. Both workflows are manual, cost-aware, report-only
 research and upload the selection manifest with the result. The selection is a
 current-liquidity snapshot, not point-in-time historical constituents, so its
 result is exploratory and must not be promoted to live trading automatically.
+
+The `Research MEXC liquid crypto perpetuals` workflow follows the same pattern
+for MEXC, but also reads MEXC contract classifications to exclude stock, ETF,
+and commodity perpetuals. It selects candidates by 24-hour quote turnover and
+bid/ask spread, then audits historical quote turnover: gradual increases are
+tagged `rising`, isolated volume jumps are tagged `surging` and receive a
+smaller size multiplier, and low-base-liquidity spikes are rejected. The
+default maximum is 12 symbols including BTC, with a 6,000 one-hour-bar history
+floor. This remains a current-constituent research snapshot rather than a
+point-in-time universe for live promotion.
 
 `spike-fade-research` is intentionally a separate hypothesis from momentum:
 it detects a large return/ATR and volume excursion, waits for a rejection of
