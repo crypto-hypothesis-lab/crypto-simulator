@@ -1,18 +1,18 @@
 {
   "schema_version": "crypto.bracket-signal.v1",
   "event_type": "crypto_investment_decision",
-  "generated_at": "2026-08-20T13:56:12.946476+00:00",
-  "idempotency_key": "decision:spot_limit_retest_balanced_0p35_1p5_2R_14d:2026-08-20T13:00:00+00:00:spot",
+  "generated_at": "2026-08-20T14:47:35.616575+00:00",
+  "idempotency_key": "decision:spot_limit_retest_balanced_0p35_1p5_2R_14d:2026-08-20T14:00:00+00:00:spot",
   "source": {
     "exchange": [
       "bitbank"
     ],
     "market": "spot",
     "interval": "1hour",
-    "closed_bar_timestamp": "2026-08-20T13:00:00+00:00",
-    "benchmark_symbol": "BTC",
+    "closed_bar_timestamp": "2026-08-20T14:00:00+00:00",
+    "benchmark_symbol": "btc_jpy",
     "symbols": [
-      "BTC"
+      "btc_jpy"
     ]
   },
   "decision": "no_trade",
@@ -62,6 +62,23 @@
     "risk_off_shorts": false,
     "max_gross_leverage": 1.0,
     "symbol_max_leverage": 1.0,
-    "cancel_on_regime_flip": true
+    "cancel_on_regime_flip": true,
+    "strategy_family": "regime_limit_retest",
+    "event_only": false,
+    "required_regime": null,
+    "required_daily_direction": null,
+    "min_consecutive_green_1h": null,
+    "max_consecutive_green_1h": null,
+    "min_prior_consecutive_green_1h": null,
+    "max_prior_consecutive_green_1h": null,
+    "min_volume_multiple": null,
+    "require_rejection_candle": false,
+    "min_rejection_fraction": null,
+    "relative_return_window": 1,
+    "min_relative_return": null,
+    "min_funding_rate": null,
+    "require_funding": false,
+    "max_holding_hours": null,
+    "funding_data_available": false
   }
 }
