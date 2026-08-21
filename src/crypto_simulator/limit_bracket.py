@@ -1241,6 +1241,9 @@ def build_limit_bracket_signal_event(
     )
     return {
         "schema_version": "crypto.bracket-signal.v1",
+        "signal_source": "crypto-simulator",
+        "strategy_id": spec.name,
+        "strategy_version": spec.name,
         "event_type": "crypto_investment_decision",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "idempotency_key": f"decision:{spec.name}:{timestamp.isoformat()}:{spec.market}",

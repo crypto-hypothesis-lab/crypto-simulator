@@ -14,6 +14,8 @@ from .dataset import load_funding_json, load_ohlcv_csv, merge_ohlcv_csv, write_f
 from .models import OHLCVBar
 from .portfolio import PortfolioConfig, default_theme_specs, funding_rates_by_interval, portfolio_research_report
 from .promotion import PromotionPolicy, evaluate_promotion_gate
+from .evaluation import compare_evaluations
+from .research_report import build_research_report
 from .mexc_liquidity import LiquidityPolicy, assess_liquidity, build_liquidity_manifest, select_current_liquid_tickers
 from .research import StrategySpec, forward_test_report, research_report
 from .spike_fade import default_spike_fade_specs, spike_fade_research_report
@@ -314,6 +316,22 @@ def main() -> None:
     promotion.add_argument("--cost-reserve", type=float, default=0.0051)
     promotion.add_argument("--minimum-net-ev", type=float, default=0.002)
     promotion.add_argument("--minimum-distinct-days", type=int, default=30)
+    promotion.add_argument("--minimum-profit-factor", type=float)
+    promotion.add_argument("--minimum-expectancy", type=float)
+    promotion.add_argument("--maximum-drawdown", type=float)
+    promotion.add_argument("--stage", choices=["backtest", "walk_forward", "cost_stress", "forward_test", "paper", "shadow_live", "small_live", "production"], default="paper")
+    compare = subparsers.add_parser("paper-compare", help="compare Backtest, Forward Test and Paper outcomes")
+    compare.add_argument("--backtest", type=Path, required=True)
+    compare.add_argument("--forward-test", type=Path, required=True)
+    compare.add_argument("--paper", type=Path, required=True)
+    compare.add_argument("--output", type=Path, default=Path("state/paper-compare.json"))
+    compare.add_argument("--cost-reserve", type=float, default=0.0)
+    compare.add_argument("--minimum-paper-outcomes", type=int, default=5)
+    research_report_command = subparsers.add_parser("research-report", help="build a Discord/Paper decision from a research artifact")
+    research_report_command.add_argument("--input", type=Path, required=True)
+    research_report_command.add_argument("--output", type=Path, default=Path("state/research-report.json"))
+    research_report_command.add_argument("--exchange", choices=["bitbank", "hyperliquid", "mexc"], required=True)
+    research_report_command.add_argument("--report-url", default="")
     args = parser.parse_args()
 
     if args.command == "demo":
@@ -335,10 +353,44 @@ def main() -> None:
                 cost_reserve=args.cost_reserve,
                 minimum_net_effective_ev=args.minimum_net_ev,
                 minimum_distinct_days=args.minimum_distinct_days,
+                minimum_profit_factor=args.minimum_profit_factor,
+                minimum_expectancy=args.minimum_expectancy,
+                maximum_drawdown=args.maximum_drawdown,
             ),
+            stage=args.stage,
         )
         _write_json(args.output, report)
         print(f"saved={args.output} decision={report['decision']} outcomes={report['outcome_count']}")
+        return
+
+    if args.command == "paper-compare":
+        try:
+            payloads = [json.loads(path.read_text(encoding="utf-8")) for path in (args.backtest, args.forward_test, args.paper)]
+            if not all(isinstance(payload, dict) for payload in payloads):
+                raise ValueError("evaluation inputs must be JSON objects")
+            report = compare_evaluations(
+                payloads[0],
+                payloads[1],
+                payloads[2],
+                cost_reserve=args.cost_reserve,
+                minimum_paper_outcomes=args.minimum_paper_outcomes,
+            )
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            parser.error(f"invalid evaluation input: {exc}")
+        _write_json(args.output, report)
+        print(f"saved={args.output} status={report['status']}")
+        return
+
+    if args.command == "research-report":
+        try:
+            payload = json.loads(args.input.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("research input must be a JSON object")
+            report = build_research_report(payload, exchange=args.exchange, report_url=args.report_url)
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            parser.error(f"invalid research input: {exc}")
+        _write_json(args.output, report)
+        print(f"saved={args.output} decision={report['decision']} strategy={report['strategy']['name']}")
         return
 
     if args.command == "mexc-liquid-select":

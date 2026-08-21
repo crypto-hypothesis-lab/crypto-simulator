@@ -33,6 +33,8 @@ on:
         required: false
         default: "6000"
         type: string
+  schedule:
+    - cron: "15 2 * * 1"
 
 permissions:
   contents: read
@@ -56,9 +58,9 @@ jobs:
         run: |
           mkdir -p /tmp/mexc
           python -m crypto_simulator mexc-liquid-select \
-            --max-symbols "${{ inputs.max_symbols }}" \
-            --min-quote-turnover-24h "${{ inputs.min_quote_turnover_24h }}" \
-            --max-spread-bps "${{ inputs.max_spread_bps }}" \
+            --max-symbols "${{ inputs.max_symbols || '12' }}" \
+            --min-quote-turnover-24h "${{ inputs.min_quote_turnover_24h || '10000000' }}" \
+            --max-spread-bps "${{ inputs.max_spread_bps || '25' }}" \
             --benchmark-symbol BTC_USDT \
             --output state/mexc-liquid-universe.json
           python - <<'PY'
@@ -81,7 +83,7 @@ jobs:
               --exchange mexc \
               --symbol "$symbol" \
               --interval 1h \
-              --days "${{ inputs.days }}" \
+              --days "${{ inputs.days || '365' }}" \
               --output "/tmp/mexc/${symbol}.csv"
             status=$?
             if [ "$status" -ne 0 ]; then
@@ -126,7 +128,7 @@ jobs:
             python -m crypto_simulator fetch-funding \
               --exchange mexc \
               --symbol "$symbol" \
-              --days "${{ inputs.days }}" \
+              --days "${{ inputs.days || '365' }}" \
               --output "/tmp/mexc/${symbol}-funding.json"
           done
       - name: Audit historical liquidity and volume regimes
@@ -135,11 +137,11 @@ jobs:
           --selection state/mexc-liquid-universe.json
           $MEXC_HISTORY_INPUT_ARGS
           --interval 1hour
-          --max-symbols "${{ inputs.max_symbols }}"
-          --min-quote-turnover-24h "${{ inputs.min_quote_turnover_24h }}"
-          --min-median-daily-quote-turnover "${{ inputs.min_median_daily_quote_turnover }}"
-          --max-spread-bps "${{ inputs.max_spread_bps }}"
-          --min-history-bars "${{ inputs.min_history_bars }}"
+          --max-symbols "${{ inputs.max_symbols || '12' }}"
+          --min-quote-turnover-24h "${{ inputs.min_quote_turnover_24h || '10000000' }}"
+          --min-median-daily-quote-turnover "${{ inputs.min_median_daily_quote_turnover || '5000000' }}"
+          --max-spread-bps "${{ inputs.max_spread_bps || '25' }}"
+          --min-history-bars "${{ inputs.min_history_bars || '6000' }}"
           --output state/mexc-liquid-universe-audited.json
       - name: Build eligible research inputs
         run: |
@@ -178,8 +180,8 @@ jobs:
           $MEXC_ELIGIBLE_FUNDING_ARGS
           --benchmark-symbol BTC_USDT
           --train-days 180
-          --test-days 60
-          --step-days 60
+          --test-days 30
+          --step-days 30
           --fee-bps 5
           --slippage-bps 5
           --spread-bps 10
@@ -187,6 +189,64 @@ jobs:
           --max-gross-leverage 5
           --max-leverage-map "$MEXC_MAX_LEVERAGE_MAP"
           --output state/mexc-liquid-event-research.json
+      - name: Build research decision report
+        run: |
+          python -m crypto_simulator research-report \
+            --input state/mexc-liquid-event-research.json \
+            --exchange mexc \
+            --report-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --output state/mexc-research-report.json
+      - name: Prepare Paper profile when research passes
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report = json.loads(Path("state/mexc-research-report.json").read_text(encoding="utf-8"))
+          profile = report.get("strategy", {}).get("profile", "") if report.get("decision") == "paper_start" else ""
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write("PAPER_PROFILE=" + profile + "\n")
+          print("paper_profile=" + (profile or "none"))
+          PY
+      - name: Generate latest Paper bracket candidate
+        if: ${{ env.PAPER_PROFILE != '' }}
+        run: >-
+          python -m crypto_simulator limit-bracket-signal
+          --market perpetual
+          --profile "$PAPER_PROFILE"
+          --interval 1hour
+          $MEXC_ELIGIBLE_INPUT_ARGS
+          $MEXC_ELIGIBLE_FUNDING_ARGS
+          --benchmark-symbol BTC_USDT
+          --max-gross-leverage 5
+          --max-leverage-map "$MEXC_MAX_LEVERAGE_MAP"
+          --output state/mexc-latest-bracket-signal.json
+      - name: Report research result to Discord
+        if: ${{ secrets.NOTIFY_ADMIN_TOKEN != '' }}
+        env:
+          NOTIFY_ADMIN_TOKEN: ${{ secrets.NOTIFY_ADMIN_TOKEN }}
+          NOTIFY_URL: https://crypto-hypothesis-lab-notifier.bej1550.workers.dev
+        run: >-
+          curl --fail-with-body --silent --show-error --request POST
+          "$NOTIFY_URL/admin/research-report"
+          --header "Authorization: Bearer $NOTIFY_ADMIN_TOKEN"
+          --header "Content-Type: application/json"
+          --data-binary @state/mexc-research-report.json
+      - name: Report Paper candidate to Discord and private Paper bridge
+        if: ${{ env.PAPER_PROFILE != '' && secrets.NOTIFY_ADMIN_TOKEN != '' }}
+        env:
+          NOTIFY_ADMIN_TOKEN: ${{ secrets.NOTIFY_ADMIN_TOKEN }}
+          NOTIFY_URL: https://crypto-hypothesis-lab-notifier.bej1550.workers.dev
+        run: >-
+          curl --fail-with-body --silent --show-error --request POST
+          "$NOTIFY_URL/admin/bracket-ingest"
+          --header "Authorization: Bearer $NOTIFY_ADMIN_TOKEN"
+          --header "Content-Type: application/json"
+          --data-binary @state/mexc-latest-bracket-signal.json
+      - name: Warn when Discord reporting is not configured
+        if: ${{ secrets.NOTIFY_ADMIN_TOKEN == '' }}
+        run: echo "NOTIFY_ADMIN_TOKEN is not configured; research ran but Discord/Paper bridge reporting was skipped."
       - name: Upload liquid-universe research report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -196,4 +256,7 @@ jobs:
             state/mexc-liquid-universe-audited.json
             state/mexc-max-leverage-map.json
             state/mexc-liquid-event-research.json
+            state/mexc-research-report.json
+            state/mexc-latest-bracket-signal.json
+          if-no-files-found: ignore
           retention-days: 30

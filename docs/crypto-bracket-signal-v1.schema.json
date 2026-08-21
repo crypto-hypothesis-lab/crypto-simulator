@@ -6,6 +6,9 @@
   "type": "object",
   "required": [
     "schema_version",
+    "signal_source",
+    "strategy_id",
+    "strategy_version",
     "event_type",
     "generated_at",
     "idempotency_key",
@@ -21,6 +24,9 @@
   ],
   "properties": {
     "schema_version": { "const": "crypto.bracket-signal.v1" },
+    "signal_source": { "const": "crypto-simulator" },
+    "strategy_id": { "type": "string", "minLength": 1 },
+    "strategy_version": { "type": "string", "minLength": 1 },
     "event_type": { "const": "crypto_investment_decision" },
     "generated_at": { "type": "string", "format": "date-time" },
     "idempotency_key": { "type": "string", "minLength": 1 },

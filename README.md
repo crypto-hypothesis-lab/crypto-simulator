@@ -172,6 +172,16 @@ default maximum is 12 symbols including BTC, with a 6,000 one-hour-bar history
 floor. This remains a current-constituent research snapshot rather than a
 point-in-time universe for live promotion.
 
+The same MEXC workflow also runs weekly on Mondays at 02:15 UTC. It writes a
+small `crypto.research-report.v1` decision artifact and sends the result to
+the private notifier when `NOTIFY_ADMIN_TOKEN` is configured as a GitHub
+Actions secret. A full-sample winner alone produces `hold`; only a complete
+dataset with the required walk-forward candidate status produces
+`paper_start`. In that case the workflow generates the latest closed-candle
+limit-bracket snapshot and forwards it to the paper-only control plane. The
+workflow never submits an exchange order, and repeated report IDs are
+deduplicated by the notifier.
+
 `spike-fade-research` is intentionally a separate hypothesis from momentum:
 it detects a large return/ATR and volume excursion, waits for a rejection of
 the pump range, and then shorts at the next common bar open. It uses a

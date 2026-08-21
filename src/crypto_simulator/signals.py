@@ -9,6 +9,7 @@ from .timeframes import interval_duration, resample_ohlcv
 
 
 SIGNAL_SCHEMA_VERSION = "crypto.signal.v1"
+SIGNAL_SOURCE = "crypto-simulator"
 
 
 def _signal_identity(*, latest: OHLCVBar, interval: str, strategy_id: str, action: str, candle_close_at: datetime) -> tuple[str, str]:
@@ -89,6 +90,7 @@ def build_signal_event(
     )
     event: dict[str, Any] = {
         "schema_version": SIGNAL_SCHEMA_VERSION,
+        "signal_source": SIGNAL_SOURCE,
         "event_id": event_id,
         "signal_key": signal_key,
         "event_type": "PAPER_SIGNAL",
