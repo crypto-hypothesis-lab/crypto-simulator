@@ -113,6 +113,9 @@ def test_signal_event_is_safe_no_trade_snapshot_during_warmup() -> None:
         interval="1hour",
     )
     assert event["schema_version"] == "crypto.bracket-signal.v1"
+    assert event["signal_source"] == "crypto-simulator"
+    assert event["strategy_id"] == "event"
+    assert event["strategy_version"] == "event"
     assert event["decision"] == "no_trade"
     assert event["regime"]["label"] == "warmup"
     assert event["candidates"] == []

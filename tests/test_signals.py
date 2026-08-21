@@ -21,6 +21,7 @@ def test_signal_event_is_deterministic_and_paper_ready() -> None:
     bars = make_bars(3)
     event = build_signal_event(bars, interval="1hour", fast_window=1, slow_window=2, as_of=bars[-1].timestamp + timedelta(hours=1))
     assert event["schema_version"] == "crypto.signal.v1"
+    assert event["signal_source"] == "crypto-simulator"
     assert event["strategy_version"] == "sma_cross_1_2"
     assert event["candle_close_at"] == "2025-01-01T03:00:00+00:00"
     assert event["event_id"] == event["signal_key"]

@@ -69,6 +69,8 @@ def build_research_report(
         raise ValueError("best strategy and metrics must be objects")
 
     strategy_name = str(strategy.get("name") or "unknown")
+    strategy_id = str(strategy.get("id") or strategy_name)
+    strategy_version = str(strategy.get("version") or strategy_name)
     strategy_family = str(strategy.get("strategy_family") or strategy_name)
     profile = _PROFILE_BY_FAMILY.get(strategy_family)
     status = str(summary.get("status") or "unknown")
@@ -104,6 +106,7 @@ def build_research_report(
 
     return {
         "schema_version": "crypto.research-report.v1",
+        "signal_source": "crypto-simulator",
         "report_id": report_id,
         "generated_at": generated_at or datetime.now(timezone.utc).isoformat(),
         "exchange": exchange,
@@ -111,6 +114,8 @@ def build_research_report(
         "report_url": report_url,
         "decision": decision,
         "strategy": {
+            "strategy_id": strategy_id,
+            "strategy_version": strategy_version,
             "name": strategy_name,
             "strategy_family": strategy_family,
             "profile": profile,

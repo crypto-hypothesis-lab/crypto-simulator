@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-hypothesis-lab.github.io/crypto-simulator/schemas/evaluation-report-v1.schema.json",
+  "title": "Crypto evaluation report v1",
+  "type": "object",
+  "required": ["schema_version", "status", "metadata", "datasets", "warnings", "recommendation"],
+  "properties": {
+    "schema_version": { "const": "crypto.evaluation-report.v1" },
+    "status": { "enum": ["ok", "warning", "rejected_mismatch"] },
+    "metadata": { "type": "object", "required": ["strategy_id", "strategy_version"] },
+    "datasets": { "type": "object", "required": ["backtest", "forward_test", "paper"] },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "recommendation": { "enum": ["continue_observation", "hold_or_demote"] }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-hypothesis-lab.github.io/crypto-simulator/schemas/crypto-signal-v1.schema.json",
+  "title": "Crypto signal v1",
+  "description": "Canonical closed-candle research signal emitted by crypto-simulator.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "signal_source",
+    "event_id",
+    "signal_key",
+    "event_type",
+    "strategy_id",
+    "strategy_version",
+    "exchange",
+    "symbol",
+    "market_type",
+    "interval",
+    "timestamp",
+    "candle_close_at",
+    "price",
+    "action"
+  ],
+  "properties": {
+    "schema_version": { "const": "crypto.signal.v1" },
+    "signal_source": { "const": "crypto-simulator" },
+    "event_id": { "type": "string", "minLength": 1 },
+    "signal_key": { "type": "string", "minLength": 1 },
+    "event_type": { "const": "PAPER_SIGNAL" },
+    "strategy_id": { "type": "string", "minLength": 1 },
+    "strategy_version": { "type": "string", "minLength": 1 },
+    "exchange": { "type": "string", "minLength": 1 },
+    "symbol": { "type": "string", "minLength": 1 },
+    "market_type": { "enum": ["spot", "margin", "perpetual"] },
+    "interval": { "type": "string", "minLength": 1 },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "candle_close_at": { "type": "string", "format": "date-time" },
+    "price": { "type": "string", "minLength": 1 },
+    "action": { "enum": ["buy", "sell", "hold"] }
+  },
+  "additionalProperties": true
+}

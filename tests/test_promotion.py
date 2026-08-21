@@ -27,3 +27,18 @@ def test_unfilled_limit_attempts_stay_in_the_denominator() -> None:
     )
     assert report["decision"] == "hold"
     assert report["windows"][0]["fill_rate"] < 0.80
+
+
+def test_promotion_report_exposes_cost_aware_risk_metrics_and_stage() -> None:
+    report = evaluate_promotion_gate(
+        [outcome(day, return_fraction=0.02 if day % 2 == 0 else -0.005) for day in range(20)],
+        PromotionPolicy(windows=(20,), minimum_distinct_days=1),
+        stage="forward_test",
+    )
+    metrics = report["full_sample"]["metrics"]
+    assert report["promotion_gate_version"] == "crypto.promotion-gate.v2"
+    assert report["stage"] == "forward_test"
+    assert report["next_stage"] == "paper"
+    assert metrics["expectancy"] is not None
+    assert metrics["profit_factor"] > 1
+    assert metrics["max_drawdown"] is not None

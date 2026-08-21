@@ -59,6 +59,9 @@ def test_walk_forward_candidate_starts_known_paper_profile():
     )
 
     assert result["decision"] == "paper_start"
+    assert result["signal_source"] == "crypto-simulator"
+    assert result["strategy"]["strategy_id"] == "mexc_event_long_pullback_atr_v1"
+    assert result["strategy"]["strategy_version"] == "mexc_event_long_pullback_atr_v1"
     assert result["strategy"]["profile"] == "mexc-long"
     assert result["paper_test"]["mode"] == "paper_only"
 
