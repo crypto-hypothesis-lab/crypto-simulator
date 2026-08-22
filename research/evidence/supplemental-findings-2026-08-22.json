@@ -1,0 +1,67 @@
+{
+  "schema_version": "crypto.research-findings.v1",
+  "recorded_at": "2026-08-22T00:00:00+09:00",
+  "purpose": "Preserve diagnostic conclusions that were produced during local analysis but were not present as standalone canonical JSON artifacts.",
+  "authority": "research_only",
+  "paper_eligible": false,
+  "summary": {
+    "status": "documented_findings",
+    "promotion_decision": "hold"
+  },
+  "findings": [
+    {
+      "finding_id": "mexc-event-router-v2-no-observed-effect",
+      "strategy_family": "mexc_event_router_v2",
+      "result": "not_validated",
+      "observation": "The volatility permission router produced the same candidate trades and returns as the v1 comparison in the inspected sample.",
+      "interpretation": "This run does not establish that regime routing is useless; the router did not block the trades that determined the result.",
+      "next_use": "Log every candidate blocked by stress and its counterfactual forward outcome before changing router thresholds."
+    },
+    {
+      "finding_id": "mexc-event-long-loss-excursion-diagnostic",
+      "strategy_id": "mexc_event_long_pullback_atr_v1",
+      "result": "entry_alpha_weak",
+      "sample": {
+        "losing_round_trips": 10,
+        "losses_with_mfe_below_0_5r": 5,
+        "losses_with_mfe_at_least_1r": 2,
+        "losses_with_mfe_at_least_2r": 0,
+        "median_loss_mfe_r": 0.184,
+        "losses_with_mae_at_least_1r": 6
+      },
+      "interpretation": "Most losses did not first become large missed winners. Exit tuning alone is unlikely to repair the strategy; entry quality needs a different information source.",
+      "next_use": "Compare Price-only event labels with Price x OI x Funding event labels before testing new exits."
+    },
+    {
+      "finding_id": "mexc-six-window-oos-classification",
+      "strategy_family": "mexc_event",
+      "result": "not_validated",
+      "sample": {
+        "oos_windows": 6,
+        "positive_trade_windows": 1,
+        "negative_trade_windows": 1,
+        "no_trade_windows": 4,
+        "positive_window_return": 0.00296,
+        "positive_window_trades": 5,
+        "negative_window_return": -0.00125,
+        "negative_window_trades": 12
+      },
+      "interpretation": "No-trade windows must be reported separately. They are neither wins nor losses and may not make a zero-event strategy look robust.",
+      "next_use": "Use the qualified-candidate Walk Forward gate and NO_STRATEGY/NO_TRADE state."
+    },
+    {
+      "finding_id": "mexc-rejection-volume-short-11-symbol",
+      "strategy_id": "mexc_event_short_rejection_volume_v1",
+      "result": "rejected_for_paper",
+      "sample": {
+        "symbols": 11,
+        "round_trips": 5,
+        "wins": 0,
+        "total_return": -0.0062,
+        "max_drawdown": 0.0064
+      },
+      "interpretation": "A price/volume rejection filter alone did not provide sufficient short alpha and the sample remained small.",
+      "next_use": "Require observed OI unwind after crowding before measuring a short event."
+    }
+  ]
+}

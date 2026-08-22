@@ -1,0 +1,116 @@
+{
+  "schema_version": "crypto.cross-venue-research.v1",
+  "generated_at": "2026-08-23T00:00:00+00:00",
+  "hypothesis": {
+    "name": "event_long_permission_filter_v1",
+    "description": "Long event/pullback entries are permitted only in a causal risk_on regime; neutral and risk_off regimes block new entries and never reverse into shorts.",
+    "shared_parameters": {
+      "entry_offset_atr": 0.35,
+      "stop_atr": 1.5,
+      "take_profit_r": 2.0,
+      "limit_expiry_bars": 4,
+      "max_holding_hours": 8,
+      "risk_per_trade": 0.001,
+      "max_gross_leverage": 1.0,
+      "symbol_max_leverage": 1.0,
+      "required_regime": "risk_on"
+    }
+  },
+  "protocol": {
+    "interval": "1hour",
+    "train_days": 120,
+    "test_days": 30,
+    "step_days": 30,
+    "minimum_training_trades": 20,
+    "walk_forward_windows": 2,
+    "research_status_rule": "Full-sample results never promote a strategy; OOS qualification is required."
+  },
+  "runs": [
+    {
+      "venue": "hyperliquid",
+      "exchange": "hyperliquid",
+      "market": "perpetual",
+      "strategy_id": "hyperliquid_event_long_permission_filter_v1",
+      "symbols": ["BTC", "ETH", "SOL", "XRP"],
+      "dataset": {
+        "start": "2026-01-26T06:00:00+00:00",
+        "end": "2026-08-22T15:00:00+00:00",
+        "bars_by_symbol": {"BTC": 5002, "ETH": 5002, "SOL": 5002, "XRP": 5001},
+        "note": "The public candle endpoint returned approximately 5,000 recent 1-hour candles; the requested one-year window was not available."
+      },
+      "costs_bps": {
+        "fee": 5,
+        "maker_fee": 2,
+        "taker_fee": 5,
+        "slippage": 5,
+        "spread": 10,
+        "market_impact": 5,
+        "adverse_selection": 2,
+        "stop_gap_penalty": 10
+      },
+      "full_sample": {
+        "total_return": 0.011968953745634076,
+        "max_drawdown": 0.003699171822706515,
+        "profit_factor": 2.2846683966468664,
+        "win_rate": 0.6153846153846154,
+        "round_trips": 26,
+        "fill_rate": 0.896551724137931,
+        "expectancy_per_trade": 0.0004603443748320799,
+        "benchmark_return": -0.1251604964527332,
+        "excess_return": 0.13712945019836728
+      },
+      "walk_forward": {
+        "status": "no_qualified_oos_trades",
+        "positive_oos_windows": 0,
+        "negative_oos_windows": 0,
+        "flat_or_no_trade_oos_windows": 2,
+        "no_qualified_training_candidate_windows": 2
+      },
+      "decision": "not_validated",
+      "failure_or_limitation": "The full sample is positive, but each training window had fewer than the required qualified evidence and therefore no OOS trade was allowed. The short history also prevents a robust multi-regime conclusion."
+    },
+    {
+      "venue": "bitbank",
+      "exchange": "bitbank",
+      "market": "spot",
+      "strategy_id": "bitbank_event_long_permission_filter_v1",
+      "symbols": ["BTC", "ETH", "XRP"],
+      "dataset": {
+        "start": "2026-02-23T00:00:00+00:00",
+        "end": "2026-08-22T15:00:00+00:00",
+        "bars_by_symbol": {"BTC": 4336, "ETH": 4336, "XRP": 4336}
+      },
+      "costs_bps": {
+        "fee": 10,
+        "maker_fee": 2,
+        "taker_fee": 10,
+        "slippage": 5,
+        "spread": 10,
+        "market_impact": 5,
+        "adverse_selection": 2,
+        "stop_gap_penalty": 10
+      },
+      "full_sample": {
+        "total_return": 0.00025851322302750134,
+        "max_drawdown": 0.0027147251892534197,
+        "profit_factor": 1.0508417094562883,
+        "win_rate": 0.5714285714285714,
+        "round_trips": 7,
+        "fill_rate": 0.7,
+        "expectancy_per_trade": 0.00003693046043250017,
+        "benchmark_return": 0.16606139179061682,
+        "excess_return": -0.16580287856758932
+      },
+      "walk_forward": {
+        "status": "no_qualified_oos_trades",
+        "positive_oos_windows": 0,
+        "negative_oos_windows": 0,
+        "flat_or_no_trade_oos_windows": 2,
+        "no_qualified_training_candidate_windows": 2,
+        "training_round_trips_per_window": 3
+      },
+      "decision": "not_validated",
+      "failure_or_limitation": "The full sample is effectively flat, has only seven round trips, and materially underperformed the BTC benchmark. Training evidence was far below the minimum trade floor, so no OOS result was treated as a win."
+    }
+  ]
+}

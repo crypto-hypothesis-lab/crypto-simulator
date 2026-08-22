@@ -343,9 +343,13 @@ class ThemeMomentumStrategy:
 class PortfolioConfig:
     initial_cash: Decimal = Decimal("100000")
     fee_bps: Decimal = Decimal("10")
+    maker_fee_bps: Decimal | None = None
+    taker_fee_bps: Decimal | None = None
     slippage_bps: Decimal = Decimal("5")
     spread_bps: Decimal = Decimal("0")
     market_impact_bps: Decimal = Decimal("0")
+    adverse_selection_bps: Decimal = Decimal("0")
+    stop_gap_penalty_bps: Decimal = Decimal("0")
     margin_interest_bps_per_day: Decimal = Decimal("0")
     rebalance_every_bars: int = 1
     max_gross_leverage: Decimal = Decimal("1")
@@ -358,10 +362,16 @@ class PortfolioConfig:
             "slippage_bps",
             "spread_bps",
             "market_impact_bps",
+            "adverse_selection_bps",
+            "stop_gap_penalty_bps",
             "margin_interest_bps_per_day",
             "max_gross_leverage",
         ):
             object.__setattr__(self, name, Decimal(str(getattr(self, name))))
+        for name in ("maker_fee_bps", "taker_fee_bps"):
+            value = getattr(self, name)
+            if value is not None:
+                object.__setattr__(self, name, Decimal(str(value)))
         if self.initial_cash <= 0:
             raise ValueError("initial_cash must be positive")
         if self.rebalance_every_bars <= 0:
@@ -378,18 +388,34 @@ class PortfolioConfig:
             )
             if any(value <= 0 for value in self.max_leverage_by_symbol.values()):
                 raise ValueError("symbol leverage limits must be positive")
-        for name in ("fee_bps", "slippage_bps", "spread_bps", "market_impact_bps"):
-            if getattr(self, name) < 0:
+        for name in (
+            "fee_bps",
+            "maker_fee_bps",
+            "taker_fee_bps",
+            "slippage_bps",
+            "spread_bps",
+            "market_impact_bps",
+            "adverse_selection_bps",
+            "stop_gap_penalty_bps",
+        ):
+            if getattr(self, name) is not None and getattr(self, name) < 0:
                 raise ValueError(f"{name} must not be negative")
 
     @property
     def one_way_execution_bps(self) -> Decimal:
         return self.slippage_bps + self.spread_bps / Decimal("2") + self.market_impact_bps
 
-    def execution_price(self, open_price: Decimal, side: str) -> Decimal:
+    def fee_for(self, liquidity: str) -> Decimal:
+        if liquidity == "maker":
+            return self.maker_fee_bps if self.maker_fee_bps is not None else self.fee_bps
+        if liquidity == "taker":
+            return self.taker_fee_bps if self.taker_fee_bps is not None else self.fee_bps
+        raise ValueError("liquidity must be maker or taker")
+
+    def execution_price(self, open_price: Decimal, side: str, *, additional_bps: Decimal = Decimal("0")) -> Decimal:
         if side not in {"buy", "sell"}:
             raise ValueError("side must be buy or sell")
-        rate = self.one_way_execution_bps / Decimal("10000")
+        rate = (self.one_way_execution_bps + Decimal(str(additional_bps))) / Decimal("10000")
         return open_price * (Decimal("1") + rate if side == "buy" else Decimal("1") - rate)
 
 
@@ -488,7 +514,7 @@ def _execute_target(
         side = "buy" if delta > 0 else "sell"
         price = config.execution_price(current_bars[symbol].open, side)
         notional = abs(delta * price)
-        fee = notional * config.fee_bps / Decimal("10000")
+        fee = notional * config.fee_for("taker") / Decimal("10000")
         cash -= delta * price
         cash -= fee
         positions[symbol] = positions.get(symbol, Decimal("0")) + delta
@@ -508,7 +534,7 @@ def _benchmark_curve(
 ) -> list[tuple[str, Decimal]]:
     if start_index >= len(bars):
         return []
-    fee_rate = config.fee_bps / Decimal("10000")
+    fee_rate = config.fee_for("taker") / Decimal("10000")
     entry = config.execution_price(bars[start_index].open, "buy")
     quantity = config.initial_cash / (entry * (Decimal("1") + fee_rate))
     cash = config.initial_cash - quantity * entry - quantity * entry * fee_rate
@@ -860,9 +886,13 @@ def portfolio_research_report(
             "symbol_leverage_caps": {symbol: str(value) for symbol, value in (config.max_leverage_by_symbol or {}).items()},
             "costs": {
                 "fee_bps": str(config.fee_bps),
+                "maker_fee_bps": str(config.fee_for("maker")),
+                "taker_fee_bps": str(config.fee_for("taker")),
                 "slippage_bps": str(config.slippage_bps),
                 "spread_bps": str(config.spread_bps),
                 "market_impact_bps": str(config.market_impact_bps),
+                "adverse_selection_bps": str(config.adverse_selection_bps),
+                "stop_gap_penalty_bps": str(config.stop_gap_penalty_bps),
                 "one_way_execution_bps": str(config.one_way_execution_bps),
             },
             "walk_forward": {

@@ -1,0 +1,586 @@
+{
+  "schema_version": "crypto.research-failure.v2",
+  "generated_at": "2026-08-22T14:53:23.275987+00:00",
+  "runs": [
+    {
+      "run_id": "research:badd050bcfecd3be5c3bd6b2",
+      "experiment_id": "research-report:mexc_event_long_permission_filter_v1",
+      "recorded_at": "2026-08-22T14:52:42.464244+00:00",
+      "exchange": null,
+      "stage": "walk_forward",
+      "status": "not_validated",
+      "strategy_ids": [
+        "mexc_event_long_permission_filter_v1"
+      ],
+      "failure_reasons": [
+        {
+          "reason_code": "negative_oos_window_present",
+          "scope": "run",
+          "strategy_id": null,
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "At least one out-of-sample window lost money.",
+          "evidence": {
+            "negative_oos_windows": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "research:926de65f6c2597dcc9ccb390",
+      "experiment_id": "research-report:mexc_event_long_pullback_atr_v1,mexc_event_short_daily_red_green_3_4_v1,mexc_event_short_rejection_volume_v1",
+      "recorded_at": "2026-08-22T13:26:52.359253+00:00",
+      "exchange": null,
+      "stage": "walk_forward",
+      "status": "not_validated",
+      "strategy_ids": [
+        "mexc_event_long_pullback_atr_v1",
+        "mexc_event_short_daily_red_green_3_4_v1",
+        "mexc_event_short_rejection_volume_v1"
+      ],
+      "failure_reasons": [
+        {
+          "reason_code": "negative_oos_window_present",
+          "scope": "run",
+          "strategy_id": null,
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "At least one out-of-sample window lost money.",
+          "evidence": {
+            "negative_oos_windows": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "research:74a97cddfd3769beb628404d",
+      "experiment_id": "mexc-standard-research-2026-08-20",
+      "recorded_at": "2026-08-22T13:04:16.402133+00:00",
+      "exchange": "mexc",
+      "stage": "backtest",
+      "status": "low_statistical_power",
+      "strategy_ids": [
+        "perpetual_limit_retest_balanced_0p35_1p5_2R_14d",
+        "perpetual_limit_retest_deep_0p55_1p5_2p4R_30d",
+        "perpetual_limit_retest_fast_0p25_1p25_1p8R_7d"
+      ],
+      "failure_reasons": [
+        {
+          "reason_code": "negative_oos_window_present",
+          "scope": "run",
+          "strategy_id": null,
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "At least one out-of-sample window lost money.",
+          "evidence": {
+            "negative_oos_windows": 1.0
+          }
+        },
+        {
+          "reason_code": "negative_or_flat_full_sample",
+          "scope": "strategy",
+          "strategy_id": "perpetual_limit_retest_fast_0p25_1p25_1p8R_7d",
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "The full-sample result was not profitable after the recorded assumptions.",
+          "evidence": {
+            "total_return": -0.016658669072225046,
+            "trades": 114.0
+          }
+        },
+        {
+          "reason_code": "non_positive_expectancy",
+          "scope": "strategy",
+          "strategy_id": "perpetual_limit_retest_fast_0p25_1p25_1p8R_7d",
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "Post-cost expectancy was not positive.",
+          "evidence": {
+            "expectancy_per_trade": -0.00013694805741677903,
+            "trades": 114.0
+          }
+        },
+        {
+          "reason_code": "profit_factor_below_research_floor",
+          "scope": "strategy",
+          "strategy_id": "perpetual_limit_retest_balanced_0p35_1p5_2R_14d",
+          "category": "weak_performance",
+          "severity": "warning",
+          "message": "Profit Factor remained below the 1.15 research floor.",
+          "evidence": {
+            "floor": 1.15,
+            "profit_factor": 1.0384989026647424,
+            "trades": 105.0
+          }
+        },
+        {
+          "reason_code": "profit_factor_below_research_floor",
+          "scope": "strategy",
+          "strategy_id": "perpetual_limit_retest_deep_0p55_1p5_2p4R_30d",
+          "category": "weak_performance",
+          "severity": "warning",
+          "message": "Profit Factor remained below the 1.15 research floor.",
+          "evidence": {
+            "floor": 1.15,
+            "profit_factor": 1.0217003155510012,
+            "trades": 96.0
+          }
+        },
+        {
+          "reason_code": "profit_factor_below_research_floor",
+          "scope": "strategy",
+          "strategy_id": "perpetual_limit_retest_fast_0p25_1p25_1p8R_7d",
+          "category": "weak_performance",
+          "severity": "warning",
+          "message": "Profit Factor remained below the 1.15 research floor.",
+          "evidence": {
+            "floor": 1.15,
+            "profit_factor": 0.9464825697196454,
+            "trades": 114.0
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "research:889f6c9fb172fe9712b97f72",
+      "experiment_id": "mexc-spike-fade-liquid-2026-08-20",
+      "recorded_at": "2026-08-22T13:04:13.069657+00:00",
+      "exchange": "mexc",
+      "stage": "backtest",
+      "status": "not_validated",
+      "strategy_ids": [
+        "perpetual_spike_fade_24h_15_reject",
+        "perpetual_spike_fade_24h_25_loose",
+        "perpetual_spike_fade_3d_30_reject",
+        "perpetual_spike_fade_3d_40_reject"
+      ],
+      "failure_reasons": [
+        {
+          "reason_code": "negative_oos_window_present",
+          "scope": "run",
+          "strategy_id": null,
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "At least one out-of-sample window lost money.",
+          "evidence": {
+            "negative_oos_windows": 3.0
+          }
+        },
+        {
+          "reason_code": "negative_or_flat_full_sample",
+          "scope": "strategy",
+          "strategy_id": "perpetual_spike_fade_24h_15_reject",
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "The full-sample result was not profitable after the recorded assumptions.",
+          "evidence": {
+            "total_return": -0.0009957850429864502,
+            "trades": 7.0
+          }
+        },
+        {
+          "reason_code": "negative_or_flat_full_sample",
+          "scope": "strategy",
+          "strategy_id": "perpetual_spike_fade_3d_30_reject",
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "The full-sample result was not profitable after the recorded assumptions.",
+          "evidence": {
+            "total_return": -0.002611213204095045,
+            "trades": 5.0
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "research:cd6fdf3ad500cf0628c83132",
+      "experiment_id": "mexc-perpetual-spike-fade-4h-1y",
+      "recorded_at": "2026-08-22T13:04:09.755830+00:00",
+      "exchange": "mexc",
+      "stage": "backtest",
+      "status": "not_validated",
+      "strategy_ids": [
+        "perpetual_spike_fade_24h_15_reject",
+        "perpetual_spike_fade_24h_25_loose",
+        "perpetual_spike_fade_3d_30_reject",
+        "perpetual_spike_fade_3d_40_reject"
+      ],
+      "failure_reasons": [
+        {
+          "reason_code": "negative_oos_window_present",
+          "scope": "run",
+          "strategy_id": null,
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "At least one out-of-sample window lost money.",
+          "evidence": {
+            "negative_oos_windows": 3.0
+          }
+        },
+        {
+          "reason_code": "negative_or_flat_full_sample",
+          "scope": "strategy",
+          "strategy_id": "perpetual_spike_fade_24h_15_reject",
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "The full-sample result was not profitable after the recorded assumptions.",
+          "evidence": {
+            "total_return": -0.00027247863687526226,
+            "trades": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "research:93fa24737f8173ec2d9980cd",
+      "experiment_id": "mexc-perpetual-limit-bracket-4h-1y",
+      "recorded_at": "2026-08-22T13:04:06.884459+00:00",
+      "exchange": "mexc",
+      "stage": "backtest",
+      "status": "not_validated",
+      "strategy_ids": [
+        "perpetual_limit_retest_balanced_0p35_1p5_2R_14d",
+        "perpetual_limit_retest_deep_0p55_1p5_2p4R_30d",
+        "perpetual_limit_retest_fast_0p25_1p25_1p8R_7d"
+      ],
+      "failure_reasons": [
+        {
+          "reason_code": "negative_oos_window_present",
+          "scope": "run",
+          "strategy_id": null,
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "At least one out-of-sample window lost money.",
+          "evidence": {
+            "negative_oos_windows": 3.0
+          }
+        },
+        {
+          "reason_code": "negative_or_flat_full_sample",
+          "scope": "strategy",
+          "strategy_id": "perpetual_limit_retest_balanced_0p35_1p5_2R_14d",
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "The full-sample result was not profitable after the recorded assumptions.",
+          "evidence": {
+            "total_return": -0.030676270335677092,
+            "trades": 55.0
+          }
+        },
+        {
+          "reason_code": "negative_or_flat_full_sample",
+          "scope": "strategy",
+          "strategy_id": "perpetual_limit_retest_deep_0p55_1p5_2p4R_30d",
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "The full-sample result was not profitable after the recorded assumptions.",
+          "evidence": {
+            "total_return": -0.09449647924502026,
+            "trades": 53.0
+          }
+        },
+        {
+          "reason_code": "negative_or_flat_full_sample",
+          "scope": "strategy",
+          "strategy_id": "perpetual_limit_retest_fast_0p25_1p25_1p8R_7d",
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "The full-sample result was not profitable after the recorded assumptions.",
+          "evidence": {
+            "total_return": -0.05499306320433348,
+            "trades": 63.0
+          }
+        },
+        {
+          "reason_code": "non_positive_expectancy",
+          "scope": "strategy",
+          "strategy_id": "perpetual_limit_retest_balanced_0p35_1p5_2R_14d",
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "Post-cost expectancy was not positive.",
+          "evidence": {
+            "expectancy_per_trade": -0.0005463947883524178,
+            "trades": 55.0
+          }
+        },
+        {
+          "reason_code": "non_positive_expectancy",
+          "scope": "strategy",
+          "strategy_id": "perpetual_limit_retest_deep_0p55_1p5_2p4R_30d",
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "Post-cost expectancy was not positive.",
+          "evidence": {
+            "expectancy_per_trade": -0.0017772633358098834,
+            "trades": 53.0
+          }
+        },
+        {
+          "reason_code": "non_positive_expectancy",
+          "scope": "strategy",
+          "strategy_id": "perpetual_limit_retest_fast_0p25_1p25_1p8R_7d",
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "Post-cost expectancy was not positive.",
+          "evidence": {
+            "expectancy_per_trade": -0.000859410089643183,
+            "trades": 63.0
+          }
+        },
+        {
+          "reason_code": "profit_factor_below_research_floor",
+          "scope": "strategy",
+          "strategy_id": "perpetual_limit_retest_balanced_0p35_1p5_2R_14d",
+          "category": "weak_performance",
+          "severity": "warning",
+          "message": "Profit Factor remained below the 1.15 research floor.",
+          "evidence": {
+            "floor": 1.15,
+            "profit_factor": 0.7855661773497713,
+            "trades": 55.0
+          }
+        },
+        {
+          "reason_code": "profit_factor_below_research_floor",
+          "scope": "strategy",
+          "strategy_id": "perpetual_limit_retest_deep_0p55_1p5_2p4R_30d",
+          "category": "weak_performance",
+          "severity": "warning",
+          "message": "Profit Factor remained below the 1.15 research floor.",
+          "evidence": {
+            "floor": 1.15,
+            "profit_factor": 0.4160990125202779,
+            "trades": 53.0
+          }
+        },
+        {
+          "reason_code": "profit_factor_below_research_floor",
+          "scope": "strategy",
+          "strategy_id": "perpetual_limit_retest_fast_0p25_1p25_1p8R_7d",
+          "category": "weak_performance",
+          "severity": "warning",
+          "message": "Profit Factor remained below the 1.15 research floor.",
+          "evidence": {
+            "floor": 1.15,
+            "profit_factor": 0.6698979964063084,
+            "trades": 63.0
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "research:1dceac556d0019abfdaed248",
+      "experiment_id": "mexc-perpetual-portfolio-5x",
+      "recorded_at": "2026-08-22T13:04:02.533510+00:00",
+      "exchange": "mexc",
+      "stage": "backtest",
+      "status": "candidate_requires_forward_test",
+      "strategy_ids": [
+        "perp_regime_momo_14_42_top2",
+        "perp_regime_momo_21_63_top2",
+        "perp_regime_momo_7_30_top1"
+      ],
+      "failure_reasons": [
+        {
+          "reason_code": "negative_oos_window_present",
+          "scope": "run",
+          "strategy_id": null,
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "At least one out-of-sample window lost money.",
+          "evidence": {
+            "negative_oos_windows": 3.0
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "research:b2cd68678ff0da8465533622",
+      "experiment_id": "mexc-perpetual-3x",
+      "recorded_at": "2026-08-22T13:03:56.154069+00:00",
+      "exchange": "mexc",
+      "stage": "backtest",
+      "status": "not_validated",
+      "strategy_ids": [
+        "perp_regime_momo_14_42_top2",
+        "perp_regime_momo_21_63_top2",
+        "perp_regime_momo_7_30_top1"
+      ],
+      "failure_reasons": [
+        {
+          "reason_code": "negative_oos_window_present",
+          "scope": "run",
+          "strategy_id": null,
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "At least one out-of-sample window lost money.",
+          "evidence": {
+            "negative_oos_windows": 4.0
+          }
+        },
+        {
+          "reason_code": "negative_or_flat_full_sample",
+          "scope": "strategy",
+          "strategy_id": "perp_regime_momo_7_30_top1",
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "The full-sample result was not profitable after the recorded assumptions.",
+          "evidence": {
+            "total_return": -0.03361080911558668,
+            "trades": 969.0
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "research:11b120131ac677a21dc8ecac",
+      "experiment_id": "mexc-perpetual-2x",
+      "recorded_at": "2026-08-22T13:03:50.331094+00:00",
+      "exchange": "mexc",
+      "stage": "backtest",
+      "status": "not_validated",
+      "strategy_ids": [
+        "perp_regime_momo_14_42_top2",
+        "perp_regime_momo_21_63_top2",
+        "perp_regime_momo_7_30_top1"
+      ],
+      "failure_reasons": [
+        {
+          "reason_code": "negative_oos_window_present",
+          "scope": "run",
+          "strategy_id": null,
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "At least one out-of-sample window lost money.",
+          "evidence": {
+            "negative_oos_windows": 4.0
+          }
+        },
+        {
+          "reason_code": "negative_or_flat_full_sample",
+          "scope": "strategy",
+          "strategy_id": "perp_regime_momo_7_30_top1",
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "The full-sample result was not profitable after the recorded assumptions.",
+          "evidence": {
+            "total_return": -0.03234961494339165,
+            "trades": 969.0
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "research:b5063742f5647639a448a986",
+      "experiment_id": "mexc-perpetual-1x",
+      "recorded_at": "2026-08-22T13:03:44.087285+00:00",
+      "exchange": "mexc",
+      "stage": "backtest",
+      "status": "not_validated",
+      "strategy_ids": [
+        "perp_regime_momo_14_42_top2",
+        "perp_regime_momo_21_63_top2",
+        "perp_regime_momo_7_30_top1"
+      ],
+      "failure_reasons": [
+        {
+          "reason_code": "negative_oos_window_present",
+          "scope": "run",
+          "strategy_id": null,
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "At least one out-of-sample window lost money.",
+          "evidence": {
+            "negative_oos_windows": 4.0
+          }
+        },
+        {
+          "reason_code": "negative_or_flat_full_sample",
+          "scope": "strategy",
+          "strategy_id": "perp_regime_momo_14_42_top2",
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "The full-sample result was not profitable after the recorded assumptions.",
+          "evidence": {
+            "total_return": -0.02971387799211718,
+            "trades": 1694.0
+          }
+        },
+        {
+          "reason_code": "negative_or_flat_full_sample",
+          "scope": "strategy",
+          "strategy_id": "perp_regime_momo_7_30_top1",
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "The full-sample result was not profitable after the recorded assumptions.",
+          "evidence": {
+            "total_return": -0.17027690709665136,
+            "trades": 969.0
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "research:13844393652fa62c5429e837",
+      "experiment_id": "mexc-event-research-liquid-2026-08-20",
+      "recorded_at": "2026-08-22T13:03:37.988193+00:00",
+      "exchange": "mexc",
+      "stage": "backtest",
+      "status": "not_validated",
+      "strategy_ids": [
+        "mexc_event_long_pullback_atr_v1",
+        "mexc_event_short_daily_red_green_3_4_v1"
+      ],
+      "failure_reasons": [
+        {
+          "reason_code": "negative_oos_window_present",
+          "scope": "run",
+          "strategy_id": null,
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "At least one out-of-sample window lost money.",
+          "evidence": {
+            "negative_oos_windows": 2.0
+          }
+        },
+        {
+          "reason_code": "negative_or_flat_full_sample",
+          "scope": "strategy",
+          "strategy_id": "mexc_event_short_daily_red_green_3_4_v1",
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "The full-sample result was not profitable after the recorded assumptions.",
+          "evidence": {
+            "total_return": -0.0009188606924640506,
+            "trades": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "research:96c7fa091db116b2bb71a669",
+      "experiment_id": "mexc-event-research-2026-08-20",
+      "recorded_at": "2026-08-22T13:03:32.589839+00:00",
+      "exchange": "mexc",
+      "stage": "backtest",
+      "status": "not_validated",
+      "strategy_ids": [
+        "mexc_event_long_pullback_atr_v1",
+        "mexc_event_short_daily_red_green_3_4_v1"
+      ],
+      "failure_reasons": [
+        {
+          "reason_code": "negative_oos_window_present",
+          "scope": "run",
+          "strategy_id": null,
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "At least one out-of-sample window lost money.",
+          "evidence": {
+            "negative_oos_windows": 2.0
+          }
+        }
+      ]
+    }
+  ]
+}

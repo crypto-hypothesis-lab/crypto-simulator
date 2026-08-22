@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import asdict, dataclass
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+import hashlib
 from statistics import median
 from typing import Iterable, Mapping
 
@@ -16,7 +17,7 @@ from .timeframes import interval_duration
 class LiquidityPolicy:
     """Conservative public-data gate for selecting MEXC perpetual candidates."""
 
-    max_symbols: int = 12
+    max_symbols: int = 20
     min_quote_turnover_24h: Decimal = Decimal("10000000")
     min_median_daily_quote_turnover: Decimal = Decimal("5000000")
     max_spread_bps: Decimal = Decimal("25")
@@ -215,6 +216,7 @@ def build_liquidity_manifest(
     assessments: Mapping[str, LiquidityAssessment] | None = None,
 ) -> dict[str, object]:
     policy = policy or LiquidityPolicy()
+    tickers = list(tickers)
     ticker_rows = []
     for ticker in tickers:
         row: dict[str, object] = {
@@ -232,7 +234,15 @@ def build_liquidity_manifest(
         if assessment is not None:
             row["history"] = assessment.to_dict()
         ticker_rows.append(row)
+    selected_at = max((ticker.timestamp for ticker in tickers), default=datetime.now(timezone.utc)).astimezone(timezone.utc)
+    symbol_ids = sorted(str(row["symbol"]) for row in ticker_rows)
+    universe_source = f"{selected_at.isoformat()}|{'|'.join(symbol_ids)}"
     return {
+        "schema_version": "crypto.point-in-time-universe.v1",
+        "universe_id": f"mexc:{selected_at.date().isoformat()}:{hashlib.sha256(universe_source.encode('utf-8')).hexdigest()[:12]}",
+        "selected_at": selected_at.isoformat(),
+        "effective_from": selected_at.isoformat(),
+        "effective_until": (selected_at + timedelta(days=1)).isoformat(),
         "selection_basis": "MEXC public ticker plus point-in-time candle turnover audit",
         "benchmark_symbol": benchmark_symbol,
         "policy": {

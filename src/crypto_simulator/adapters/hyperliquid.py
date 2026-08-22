@@ -24,6 +24,11 @@ _INTERVAL_MS = {
     "1M": 2_592_000_000,
 }
 
+# The public candleSnapshot endpoint silently truncates broad requests to a
+# recent window.  Keep requests bounded so a long research window cannot look
+# complete while containing only the latest few weeks.
+_MAX_CANDLE_REQUEST = timedelta(days=28)
+
 
 class HyperliquidAdapter:
     exchange = "hyperliquid"
@@ -44,22 +49,24 @@ class HyperliquidAdapter:
             raise ValueError(f"unsupported Hyperliquid interval: {interval}")
         end = (end or datetime.now(timezone.utc)).astimezone(timezone.utc)
         start = (start or end - timedelta(milliseconds=_INTERVAL_MS[interval] * 5000)).astimezone(timezone.utc)
-        payload = {
-            "type": "candleSnapshot",
-            "req": {
-                "coin": symbol.upper(),
-                "interval": interval,
-                "startTime": int(start.timestamp() * 1000),
-                "endTime": int(end.timestamp() * 1000),
-            },
-        }
-        response = self.client.post(self.endpoint, payload)
-        if not isinstance(response, list):
-            raise ValueError("unexpected Hyperliquid candle response")
-        bars = []
-        for item in response:
-            bars.append(
-                OHLCVBar(
+        bars_by_timestamp: dict[int, OHLCVBar] = {}
+        cursor = start
+        while cursor < end:
+            request_end = min(cursor + _MAX_CANDLE_REQUEST, end)
+            payload = {
+                "type": "candleSnapshot",
+                "req": {
+                    "coin": symbol.upper(),
+                    "interval": interval,
+                    "startTime": int(cursor.timestamp() * 1000),
+                    "endTime": int(request_end.timestamp() * 1000),
+                },
+            }
+            response = self.client.post(self.endpoint, payload)
+            if not isinstance(response, list):
+                raise ValueError("unexpected Hyperliquid candle response")
+            for item in response:
+                bar = OHLCVBar(
                     exchange=self.exchange,
                     symbol=symbol.upper(),
                     market_type="perpetual",
@@ -70,7 +77,12 @@ class HyperliquidAdapter:
                     close=item["c"],
                     volume=item["v"],
                 )
-            )
+                bars_by_timestamp[bar.epoch_ms] = bar
+            # Move by the requested window rather than by the response length.
+            # The API may return fewer candles around listing gaps, and it may
+            # repeat the boundary candle; the final dictionary handles overlap.
+            cursor = request_end
+        bars = list(bars_by_timestamp.values())
         return sorted(bars, key=lambda bar: bar.timestamp)
 
     def fetch_funding(

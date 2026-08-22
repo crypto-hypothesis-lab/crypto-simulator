@@ -70,12 +70,15 @@ class DerivativesObservation:
     market_type: str
     observed_at: datetime
     exchange_timestamp: datetime | None = None
+    published_at: datetime | None = None
     mark_price: Decimal | None = None
     index_price: Decimal | None = None
     open_interest: Decimal | None = None
     open_interest_usd: Decimal | None = None
     funding_rate: Decimal | None = None
     funding_interval_hours: Decimal | None = None
+    funding_status: str = "unknown"
+    next_funding_at: datetime | None = None
     volume_24h_usd: Decimal | None = None
     instrument: str | None = None
     status: str = "fresh"
@@ -88,6 +91,10 @@ class DerivativesObservation:
         object.__setattr__(self, "observed_at", _utc(self.observed_at))
         if self.exchange_timestamp is not None:
             object.__setattr__(self, "exchange_timestamp", _utc(self.exchange_timestamp))
+        if self.published_at is not None:
+            object.__setattr__(self, "published_at", _utc(self.published_at))
+        if self.next_funding_at is not None:
+            object.__setattr__(self, "next_funding_at", _utc(self.next_funding_at))
         object.__setattr__(self, "symbol", _canonical_symbol(self.symbol))
         if self.instrument is not None:
             object.__setattr__(self, "instrument", self.instrument.upper())
@@ -135,6 +142,8 @@ class DerivativesObservation:
         data = asdict(self)
         data["observed_at"] = _iso(self.observed_at)
         data["exchange_timestamp"] = _iso(self.exchange_timestamp)
+        data["published_at"] = _iso(self.published_at)
+        data["next_funding_at"] = _iso(self.next_funding_at)
         for name in (
             "mark_price",
             "index_price",
@@ -156,12 +165,15 @@ class DerivativesObservation:
             market_type=str(payload.get("market_type", "perpetual")),
             observed_at=_datetime(payload["observed_at"]) or datetime.now(timezone.utc),
             exchange_timestamp=_datetime(payload.get("exchange_timestamp")),
+            published_at=_datetime(payload.get("published_at")),
             mark_price=payload.get("mark_price"),
             index_price=payload.get("index_price"),
             open_interest=payload.get("open_interest"),
             open_interest_usd=payload.get("open_interest_usd"),
             funding_rate=payload.get("funding_rate"),
             funding_interval_hours=payload.get("funding_interval_hours"),
+            funding_status=str(payload.get("funding_status", "unknown")),
+            next_funding_at=_datetime(payload.get("next_funding_at")),
             volume_24h_usd=payload.get("volume_24h_usd"),
             instrument=payload.get("instrument"),
             status=str(payload.get("status", "fresh")),

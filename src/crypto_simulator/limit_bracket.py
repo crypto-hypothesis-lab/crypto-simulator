@@ -4,6 +4,7 @@ from bisect import bisect_right
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from functools import lru_cache
 import hashlib
 from math import isfinite, sqrt
 from statistics import mean, median, pstdev
@@ -91,6 +92,47 @@ def _percentile_rank(value: float, values: list[float]) -> float:
     return sum(candidate < value for candidate in values) / (len(values) - 1)
 
 
+def _realized_volatility(closes: list[Decimal], window: int) -> float | None:
+    """Return annualized close-to-close volatility using history through now."""
+
+    if len(closes) < window + 1:
+        return None
+    returns = [
+        float(closes[index] / closes[index - 1] - Decimal("1"))
+        for index in range(len(closes) - window, len(closes))
+        if closes[index - 1] > 0 and closes[index] > 0
+    ]
+    if len(returns) < window:
+        return None
+    return _safe_float(pstdev(returns) * sqrt(365.0))
+
+
+def _volatility_percentile(closes: list[Decimal], window: int, lookback: int) -> tuple[float | None, float | None]:
+    return _volatility_percentile_cached(tuple(closes), window, lookback)
+
+
+@lru_cache(maxsize=4096)
+def _volatility_percentile_cached(
+    closes: tuple[Decimal, ...],
+    window: int,
+    lookback: int,
+) -> tuple[float | None, float | None]:
+    """Return current realized volatility and its causal trailing percentile."""
+
+    if len(closes) < window + lookback:
+        return None, None
+    start = max(window, len(closes) - lookback)
+    history: list[float] = []
+    for end in range(start, len(closes)):
+        value = _realized_volatility(closes[: end + 1], window)
+        if value is not None:
+            history.append(value)
+    current = _realized_volatility(closes, window)
+    if current is None or len(history) < 2:
+        return current, None
+    return current, _safe_float(_percentile_rank(current, history))
+
+
 @dataclass(frozen=True, slots=True)
 class LimitBracketSpec:
     """A multi-timeframe pullback strategy with a finite parent/bracket order.
@@ -143,6 +185,10 @@ class LimitBracketSpec:
     min_funding_rate: float | None = None
     require_funding: bool = False
     max_holding_hours: float | None = None
+    regime_model: str = "legacy"
+    volatility_window: int = 20
+    volatility_lookback: int = 120
+    volatility_stress_percentile: float = 0.90
 
     def __post_init__(self) -> None:
         if self.market not in {"spot", "margin", "perpetual"}:
@@ -220,6 +266,14 @@ class LimitBracketSpec:
             raise ValueError("max_holding_hours must be between 0 and 720")
         if self.require_funding and self.min_funding_rate is None:
             raise ValueError("require_funding requires min_funding_rate")
+        if self.regime_model not in {"legacy", "router_v2"}:
+            raise ValueError("regime_model must be legacy or router_v2")
+        if self.volatility_window <= 1:
+            raise ValueError("volatility_window must exceed 1")
+        if self.volatility_lookback < self.volatility_window:
+            raise ValueError("volatility_lookback must not be below volatility_window")
+        if not 0.5 <= self.volatility_stress_percentile < 1.0:
+            raise ValueError("volatility_stress_percentile must be between 0.5 and 1.0")
 
     @property
     def minimum_source_history(self) -> int:
@@ -407,6 +461,91 @@ def default_mexc_event_specs(market: str) -> list[LimitBracketSpec]:
     ]
 
 
+def default_mexc_event_v2_specs(market: str) -> list[LimitBracketSpec]:
+    """Return event candidates with a volatility-aware permission router.
+
+    v1 remains the frozen comparison/Paper profile.  v2 only changes the
+    regime permission layer: it keeps the causal event filters and refuses
+    new entries when benchmark realized volatility is in its trailing high
+    percentile.  The distinct IDs prevent results from being mixed.
+    """
+
+    return [
+        replace(
+            spec,
+            name=spec.name.replace("_v1", "_router_v2"),
+            strategy_family=f"{spec.strategy_family}_router_v2",
+            regime_model="router_v2",
+        )
+        for spec in default_mexc_event_specs(market)
+    ]
+
+
+def default_mexc_event_permission_specs(market: str) -> list[LimitBracketSpec]:
+    """Return the long-only event entry with regime used only as permission.
+
+    This profile is the direct test of the current research conclusion: a
+    risk-on regime permits the event entry, while neutral/risk-off regimes
+    simply produce no new entry. It never reverses into a short strategy based
+    on the regime, and it keeps a separate strategy ID for clean comparison.
+    """
+
+    return default_event_permission_specs(market, venue="mexc")
+
+
+def default_event_permission_specs(market: str, *, venue: str) -> list[LimitBracketSpec]:
+    """Return the venue-labelled, long-only event permission strategy.
+
+    The hypothesis is deliberately venue-neutral: the event entry is allowed
+    only while the causal regime filter is ``risk_on``.  A risk-off or neutral
+    regime blocks new entries; it never causes an automatic short.  Keeping the
+    venue in the strategy ID lets the same hypothesis be compared across
+    perpetual and spot data without mixing research lineage.
+
+    ``venue`` is a label for the research record, not a source of different
+    parameters.  Venue-specific fees, liquidity, and market type belong in the
+    backtest configuration supplied by the caller.
+    """
+
+    if market not in {"spot", "margin", "perpetual"}:
+        raise ValueError("event permission strategy requires spot, margin, or perpetual market")
+    label = str(venue).strip().lower().replace("-", "_")
+    if not label or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_" for character in label):
+        raise ValueError("venue must contain only letters, numbers, underscores, or hyphens")
+    return [
+        LimitBracketSpec(
+            f"{label}_event_long_permission_filter_v1",
+            market=market,
+            execution_fast=8,
+            execution_breakout_lookback=12,
+            atr_window=20,
+            trend_fast=6,
+            trend_slow=18,
+            regime_fast=20,
+            regime_slow=60,
+            relative_momentum_window=6,
+            volume_window=20,
+            entry_offset_atr=0.35,
+            stop_atr=1.5,
+            take_profit_r=2.0,
+            limit_expiry_bars=4,
+            max_holding_days=1,
+            max_holding_hours=8,
+            risk_per_trade=0.001,
+            max_positions=1,
+            top_n=1,
+            bottom_n=1,
+            breadth_threshold=0.5,
+            min_theme_score=0.55,
+            risk_off_shorts=False,
+            max_gross_leverage=1.0,
+            symbol_max_leverage=1.0,
+            strategy_family=f"{label}_event_long_permission_filter",
+            required_regime="risk_on",
+        )
+    ]
+
+
 @dataclass(frozen=True, slots=True)
 class LimitBracketSignal:
     symbol: str
@@ -435,6 +574,9 @@ class LimitBracketSignal:
 class _MarketContext:
     regime: str
     breadth: float
+    state: str = "normal"
+    realized_volatility: float | None = None
+    volatility_percentile: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -471,6 +613,8 @@ class _LiveBracket:
     stop_price: Decimal
     target_price: Decimal
     signal: LimitBracketSignal
+    max_favorable_r: float = 0.0
+    max_adverse_r: float = 0.0
 
 
 @dataclass(slots=True)
@@ -512,6 +656,8 @@ class LimitBracketMetrics:
     stop_losses: int
     take_profits: int
     time_stops: int
+    average_mfe_r: float
+    average_mae_r: float
     benchmark_return: float
     excess_return: float
     funding_cost_fraction: float
@@ -608,12 +754,44 @@ def _context_and_scores(
     else:
         regime = "neutral"
 
+    context = _MarketContext(regime, breadth)
+    if spec.regime_model == "router_v2":
+        realized_volatility, volatility_percentile = _volatility_percentile(
+            benchmark_daily_closes,
+            spec.volatility_window,
+            spec.volatility_lookback,
+        )
+        if volatility_percentile is None:
+            context = _MarketContext(
+                "neutral",
+                breadth,
+                "insufficient_volatility_history",
+                realized_volatility,
+                volatility_percentile,
+            )
+        elif volatility_percentile >= spec.volatility_stress_percentile:
+            context = _MarketContext(
+                "neutral",
+                breadth,
+                "stress",
+                realized_volatility,
+                volatility_percentile,
+            )
+        else:
+            context = _MarketContext(
+                regime,
+                breadth,
+                "normal",
+                realized_volatility,
+                volatility_percentile,
+            )
+
     if not calculate_scores:
-        return _MarketContext(regime, breadth), {}
+        return context, {}
 
     benchmark_trend = views[benchmark_symbol].four_hour.through(timestamp)
     if len(benchmark_trend) < max(spec.trend_slow, spec.relative_momentum_window) + 1:
-        return _MarketContext(regime, breadth), {}
+        return context, {}
     benchmark_trend_closes = [bar.close for bar in benchmark_trend]
     benchmark_relative_return = _return(benchmark_trend_closes, spec.relative_momentum_window)
     metrics: dict[str, tuple[float, float, float]] = {}
@@ -635,7 +813,7 @@ def _context_and_scores(
         volume_acceleration = float(recent / older - Decimal("1")) if older > 0 else 0.0
         metrics[symbol] = (fast_return, relative_return, volume_acceleration)
     if not metrics:
-        return _MarketContext(regime, breadth), {}
+        return context, {}
     fast_values = [value[0] for value in metrics.values()]
     relative_values = [value[1] for value in metrics.values()]
     volume_values = [value[2] for value in metrics.values()]
@@ -647,7 +825,7 @@ def _context_and_scores(
         )
         for symbol, values in metrics.items()
     }
-    return _MarketContext(regime, breadth), scores
+    return context, scores
 
 
 def _daily_direction(bars: list[OHLCVBar]) -> str | None:
@@ -1223,7 +1401,11 @@ def build_limit_bracket_signal_event(
                 },
             }
         )
-    if context.regime == "warmup":
+    if context.state == "insufficient_volatility_history":
+        no_trade_reason = "insufficient_volatility_history"
+    elif context.state == "stress":
+        no_trade_reason = "volatility_stress"
+    elif context.regime == "warmup":
         no_trade_reason = "insufficient_higher_timeframe_history"
     elif context.regime == "neutral":
         no_trade_reason = "neutral_regime"
@@ -1259,8 +1441,11 @@ def build_limit_bracket_signal_event(
         "recommended_action": recommended_action,
         "regime": {
             "label": context.regime,
+            "state": context.state,
             "breadth": context.breadth,
             "confidence": breadth_confidence,
+            "realized_volatility": context.realized_volatility,
+            "volatility_percentile": context.volatility_percentile,
             "new_long_allowed": context.regime == "risk_on",
             "new_short_allowed": context.regime == "risk_off" and spec.risk_off_shorts and spec.market != "spot",
         },
@@ -1301,18 +1486,25 @@ def _close_position(
     exit_side = "sell" if position.direction == "long" else "buy"
     if reason == "take_profit":
         price = _take_profit_fill(bar, position.direction, raw_price)
+        fee_bps = config.fee_for("maker")
     elif reason == "stop_loss":
         # A stop is modeled as a protective, marketable close. Intrabar stops
         # pay the configured adverse execution cost; gaps fill at the open.
         gap_through = (position.direction == "long" and bar.open <= raw_price) or (
             position.direction == "short" and bar.open >= raw_price
         )
-        price = bar.open if gap_through else config.execution_price(raw_price, exit_side)
+        price = (
+            config.execution_price(bar.open, exit_side, additional_bps=config.stop_gap_penalty_bps)
+            if gap_through
+            else config.execution_price(raw_price, exit_side)
+        )
+        fee_bps = config.fee_for("taker")
     else:
         price = config.execution_price(raw_price, exit_side)
+        fee_bps = config.fee_for("taker")
     quantity = abs(position.quantity)
     notional = quantity * price
-    fee = notional * config.fee_bps / Decimal("10000")
+    fee = notional * fee_bps / Decimal("10000")
     if position.direction == "long":
         cash_delta = notional - fee
     else:
@@ -1336,9 +1528,31 @@ def _close_position(
             "reason": reason,
             "regime": position.signal.regime,
             "score": position.signal.score,
+            "mfe_r": position.max_favorable_r,
+            "mae_r": position.max_adverse_r,
         }
     )
     return cash_delta
+
+
+def _update_excursion(position: _LiveBracket, bar: OHLCVBar) -> None:
+    """Track favorable/adverse movement in initial-risk units.
+
+    MAE/MFE are diagnostic only. They never change exits or sizing, so adding
+    this telemetry cannot alter the existing Paper/backtest behavior.
+    """
+
+    risk_distance = abs(position.entry_price - position.stop_price)
+    if risk_distance <= 0:
+        return
+    if position.direction == "long":
+        favorable = (bar.high - position.entry_price) / risk_distance
+        adverse = (position.entry_price - bar.low) / risk_distance
+    else:
+        favorable = (position.entry_price - bar.low) / risk_distance
+        adverse = (bar.high - position.entry_price) / risk_distance
+    position.max_favorable_r = max(position.max_favorable_r, max(float(favorable), 0.0))
+    position.max_adverse_r = max(position.max_adverse_r, max(float(adverse), 0.0))
 
 
 def _benchmark_curve(
@@ -1348,7 +1562,7 @@ def _benchmark_curve(
 ) -> list[tuple[str, Decimal]]:
     if start_index >= len(bars):
         return []
-    fee_rate = config.fee_bps / Decimal("10000")
+    fee_rate = config.fee_for("taker") / Decimal("10000")
     entry = config.execution_price(bars[start_index].open, "buy")
     quantity = config.initial_cash / (entry * (Decimal("1") + fee_rate))
     cash = config.initial_cash - quantity * entry - quantity * entry * fee_rate
@@ -1419,6 +1633,7 @@ def run_limit_bracket_backtest(
         # 1. Manage existing brackets before considering new entry fills.
         for symbol, position in list(positions.items()):
             bar = current[symbol]
+            _update_excursion(position, bar)
             holding_days = (timestamp - datetime.fromisoformat(position.entry_timestamp)).total_seconds() / 86_400.0
             reason: str | None = None
             raw_exit: Decimal | None = None
@@ -1468,6 +1683,11 @@ def run_limit_bracket_backtest(
             fill_price = _limit_fill(current[symbol], order.signal.direction, order.signal.limit_price)
             if fill_price is None:
                 continue
+            adverse_rate = config.adverse_selection_bps / Decimal("10000")
+            if order.signal.direction == "long":
+                fill_price *= Decimal("1") + adverse_rate
+            else:
+                fill_price *= Decimal("1") - adverse_rate
             equity_at_open = cash + sum(position.quantity * current[name].open for name, position in positions.items())
             existing_gross = sum(abs(position.quantity * current[name].open) for name, position in positions.items())
             quantity = _entry_quantity(
@@ -1481,7 +1701,7 @@ def run_limit_bracket_backtest(
             if quantity <= 0:
                 continue
             notional = quantity * fill_price
-            fee = notional * config.fee_bps / Decimal("10000")
+            fee = notional * config.fee_for("maker") / Decimal("10000")
             if order.signal.direction == "long":
                 cash -= notional + fee
             else:
@@ -1596,6 +1816,8 @@ def evaluate_limit_bracket_result(result: LimitBracketResult) -> LimitBracketMet
     losses = [-pnl for pnl in pnls if pnl < 0]
     profit_factor = sum(wins) / sum(losses) if losses else (None if wins else 0.0)
     average_holding = mean(float(item["holding_days"]) for item in result.round_trips) if result.round_trips else 0.0
+    average_mfe = mean(float(item.get("mfe_r", 0.0)) for item in result.round_trips) if result.round_trips else 0.0
+    average_mae = mean(float(item.get("mae_r", 0.0)) for item in result.round_trips) if result.round_trips else 0.0
     total_fees = sum(float(trade.notional) for trade in result.trades)
     return LimitBracketMetrics(
         total_return=_safe_float(total_return),
@@ -1618,6 +1840,8 @@ def evaluate_limit_bracket_result(result: LimitBracketResult) -> LimitBracketMet
         stop_losses=sum(item["reason"] == "stop_loss" for item in result.round_trips),
         take_profits=sum(item["reason"] == "take_profit" for item in result.round_trips),
         time_stops=sum(item["reason"] == "time_stop" for item in result.round_trips),
+        average_mfe_r=_safe_float(average_mfe),
+        average_mae_r=_safe_float(average_mae),
         benchmark_return=_safe_float(benchmark_return),
         excess_return=_safe_float(total_return - benchmark_return),
         funding_cost_fraction=_safe_float(float(result.funding_cost / result.initial_cash)),
@@ -1637,8 +1861,54 @@ class LimitBracketWalkForwardWindow:
     test_start: str
     test_end: str
     selected_strategy: str
+    selection_status: str
     train_metrics: LimitBracketMetrics
     test_metrics: LimitBracketMetrics
+
+
+def _qualifies_training_candidate(metrics: LimitBracketMetrics, minimum_trades: int) -> bool:
+    """Reject flattering zero/small-sample candidates before OOS selection."""
+
+    return (
+        metrics.round_trips >= minimum_trades
+        and metrics.expectancy_per_trade > 0
+        and metrics.robust_score > 0
+        and metrics.profit_factor is not None
+        and metrics.profit_factor >= 1.15
+    )
+
+
+def _no_trade_metrics(template: LimitBracketMetrics) -> LimitBracketMetrics:
+    return replace(
+        template,
+        total_return=0.0,
+        annualized_return=0.0,
+        max_drawdown=0.0,
+        sharpe=0.0,
+        max_gross_exposure=0.0,
+        average_gross_exposure=0.0,
+        turnover=0.0,
+        signals=0,
+        orders=0,
+        filled_entries=0,
+        cancelled_orders=0,
+        fill_rate=0.0,
+        round_trips=0,
+        win_rate=0.0,
+        profit_factor=None,
+        expectancy_per_trade=0.0,
+        average_holding_days=0.0,
+        stop_losses=0,
+        take_profits=0,
+        time_stops=0,
+        average_mfe_r=0.0,
+        average_mae_r=0.0,
+        benchmark_return=0.0,
+        excess_return=0.0,
+        funding_cost_fraction=0.0,
+        financing_cost_fraction=0.0,
+        robust_score=0.0,
+    )
 
 
 def limit_bracket_walk_forward_search(
@@ -1652,6 +1922,7 @@ def limit_bracket_walk_forward_search(
     train_days: int = 180,
     test_days: int = 60,
     step_days: int = 60,
+    minimum_training_trades: int = 20,
 ) -> list[LimitBracketWalkForwardWindow]:
     if train_days <= 0 or test_days <= 0 or step_days <= 0:
         raise ValueError("walk-forward periods must be positive")
@@ -1681,11 +1952,29 @@ def limit_bracket_walk_forward_search(
             )
             for spec in specs
         ]
+        qualified = [item for item in train_evaluations if _qualifies_training_candidate(item[1], minimum_training_trades)]
+        ranking_pool = qualified or train_evaluations
         selected_spec, selected_metrics = max(
-            train_evaluations,
+            ranking_pool,
             key=lambda item: (item[1].robust_score, item[1].excess_return, -item[1].max_drawdown),
         )
+        selection_status = "selected" if qualified else "no_qualified_training_candidate"
         test_timestamps = timestamps[train_index:test_end_index]
+        if not qualified:
+            windows.append(
+                LimitBracketWalkForwardWindow(
+                    timestamps[0].isoformat(),
+                    timestamps[train_index - 1].isoformat(),
+                    test_timestamps[0].isoformat(),
+                    test_timestamps[-1].isoformat(),
+                    "NO_STRATEGY",
+                    selection_status,
+                    selected_metrics,
+                    _no_trade_metrics(selected_metrics),
+                )
+            )
+            cursor += timedelta(days=step_days)
+            continue
         test_universe = {symbol: [bar for bar in bars if bar.timestamp <= test_timestamps[-1]] for symbol, bars in universe.items()}
         test_result = run_limit_bracket_backtest(
             test_universe,
@@ -1703,6 +1992,7 @@ def limit_bracket_walk_forward_search(
                 test_timestamps[0].isoformat(),
                 test_timestamps[-1].isoformat(),
                 selected_spec.name,
+                selection_status,
                 selected_metrics,
                 evaluate_limit_bracket_result(test_result),
             )
@@ -1724,6 +2014,7 @@ def limit_bracket_research_report(
     train_days: int = 180,
     test_days: int = 60,
     step_days: int = 60,
+    minimum_training_trades: int = 20,
 ) -> dict[str, Any]:
     if market not in {"spot", "margin", "perpetual"}:
         raise ValueError("market must be spot, margin, or perpetual")
@@ -1760,13 +2051,17 @@ def limit_bracket_research_report(
         train_days=train_days,
         test_days=test_days,
         step_days=step_days,
+        minimum_training_trades=minimum_training_trades,
     )
-    positive_returns = [window.test_metrics.total_return > 0 for window in windows]
-    positive_excess = [window.test_metrics.excess_return > 0 for window in windows]
-    median_return = median(window.test_metrics.total_return for window in windows) if windows else None
-    median_excess = median(window.test_metrics.excess_return for window in windows) if windows else None
+    traded_windows = [window for window in windows if window.selection_status == "selected" and window.test_metrics.round_trips > 0]
+    positive_returns = [window.test_metrics.total_return > 0 for window in traded_windows]
+    positive_excess = [window.test_metrics.excess_return > 0 for window in traded_windows]
+    median_return = median(window.test_metrics.total_return for window in traded_windows) if traded_windows else None
+    median_excess = median(window.test_metrics.excess_return for window in traded_windows) if traded_windows else None
     if not windows:
         status = "insufficient_history_for_walk_forward"
+    elif not traded_windows:
+        status = "no_qualified_oos_trades"
     elif mean(positive_returns) < 0.6 or mean(positive_excess) < 0.6 or (median_return is not None and median_return <= 0) or (median_excess is not None and median_excess <= 0):
         status = "not_validated"
     elif len(windows) < 6:
@@ -1806,12 +2101,24 @@ def limit_bracket_research_report(
             "symbol_leverage_caps": {symbol: str(value) for symbol, value in (config.max_leverage_by_symbol or {}).items()},
             "costs": {
                 "fee_bps": str(config.fee_bps),
+                "maker_fee_bps": str(config.fee_for("maker")),
+                "taker_fee_bps": str(config.fee_for("taker")),
                 "slippage_bps": str(config.slippage_bps),
                 "spread_bps": str(config.spread_bps),
                 "market_impact_bps": str(config.market_impact_bps),
+                "adverse_selection_bps": str(config.adverse_selection_bps),
+                "stop_gap_penalty_bps": str(config.stop_gap_penalty_bps),
                 "one_way_execution_bps": str(config.one_way_execution_bps),
+                "stress_multipliers": [1.0, 1.5, 2.0],
             },
-            "walk_forward": {"train_days": train_days, "test_days": test_days, "step_days": step_days},
+            "walk_forward": {
+                "train_days": train_days,
+                "test_days": test_days,
+                "step_days": step_days,
+                "minimum_training_trades": minimum_training_trades,
+                "selection_profit_factor_floor": 1.15,
+                "no_qualified_candidate_policy": "NO_STRATEGY / NO_TRADE",
+            },
         },
         "full_sample": [
             {
@@ -1831,6 +2138,7 @@ def limit_bracket_research_report(
                 "test_start": window.test_start,
                 "test_end": window.test_end,
                 "selected_strategy": window.selected_strategy,
+                "selection_status": window.selection_status,
                 "train_metrics": asdict(window.train_metrics),
                 "test_metrics": asdict(window.test_metrics),
             }
@@ -1842,7 +2150,9 @@ def limit_bracket_research_report(
             "positive_oos_return_fraction": mean(positive_returns) if positive_returns else None,
             "positive_oos_excess_fraction": mean(positive_excess) if positive_excess else None,
             "positive_oos_windows": sum(positive_returns),
-            "negative_oos_windows": len(positive_returns) - sum(positive_returns),
+            "negative_oos_windows": len(traded_windows) - sum(positive_returns),
+            "flat_or_no_trade_oos_windows": len(windows) - len(traded_windows),
+            "no_qualified_strategy_windows": sum(window.selection_status != "selected" for window in windows),
             "median_oos_return": median_return,
             "median_oos_excess_return": median_excess,
             "data_quality_status": "complete" if quality["contiguous"] else "gaps_or_duplicates_detected",

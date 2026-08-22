@@ -9,14 +9,17 @@ or Live execution.
 `crypto_simulator.derivatives` normalizes public perpetual snapshots from:
 
 - Hyperliquid `metaAndAssetCtxs`
+- MEXC contract ticker plus current funding-rate endpoint
 - Bybit V5 linear perpetual tickers
 - OKX SWAP ticker, mark price, open interest, and funding endpoints
 
-The normalized `DerivativesObservation` records the venue, symbol, observed
-and exchange timestamps, mark/index prices, open interest, USD open interest
-when supplied, funding rate, funding interval, 24-hour volume, source, and
-data-quality status. Funding is converted to a per-hour value only when the
-provider supplies a usable funding interval.
+The normalized `DerivativesObservation` records the venue, symbol, fetch
+(`observed_at`), exchange and publication timestamps, mark/index prices, open
+interest, USD open interest when supplied, funding rate, funding interval,
+funding status, next funding time, 24-hour volume, source, and data-quality
+status. Current predicted funding is never relabelled as finalized or paid.
+Funding is converted to a per-hour value only when the provider supplies a
+usable funding interval.
 
 `build_derivatives_features` uses only observations at or before the requested
 `as_of` time. It calculates cross-venue medians for price/OI changes and
@@ -56,7 +59,7 @@ DuckDB is optional; install `crypto-simulator[analysis]` when using this mode.
 Select one or more venues and symbols:
 
 ```powershell
-python -m crypto_simulator derivatives-shadow --venue hyperliquid --venue bybit --symbol BTC --output state/derivatives-shadow.json
+python -m crypto_simulator derivatives-shadow --venue mexc --venue hyperliquid --venue bybit --symbol BTC --output state/derivatives-shadow.json
 ```
 
 For deterministic offline evaluation, pass an observation fixture. A second

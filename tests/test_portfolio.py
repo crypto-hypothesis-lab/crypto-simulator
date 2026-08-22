@@ -15,6 +15,23 @@ from crypto_simulator.portfolio import (
 )
 
 
+def test_execution_cost_model_separates_maker_taker_and_gap_penalty() -> None:
+    config = PortfolioConfig(
+        fee_bps=Decimal("5"),
+        maker_fee_bps=Decimal("2"),
+        taker_fee_bps=Decimal("6"),
+        slippage_bps=Decimal("3"),
+        spread_bps=Decimal("4"),
+        market_impact_bps=Decimal("1"),
+        adverse_selection_bps=Decimal("2"),
+        stop_gap_penalty_bps=Decimal("10"),
+    )
+    assert config.fee_for("maker") == Decimal("2")
+    assert config.fee_for("taker") == Decimal("6")
+    assert config.one_way_execution_bps == Decimal("6")
+    assert config.execution_price(Decimal("100"), "sell", additional_bps=config.stop_gap_penalty_bps) == Decimal("99.84")
+
+
 def make_universe(count: int = 150) -> dict[str, list[OHLCVBar]]:
     start = datetime(2025, 1, 1, tzinfo=timezone.utc)
     universe = {}

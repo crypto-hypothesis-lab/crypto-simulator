@@ -488,7 +488,7 @@ def _close_position(
     price = config.execution_price(raw_price, "buy")
     quantity = abs(position.quantity)
     notional = quantity * price
-    fee = notional * config.fee_bps / Decimal("10000")
+    fee = notional * config.fee_for("taker") / Decimal("10000")
     cash -= notional + fee
     trades.append(PortfolioTrade(timestamp.isoformat(), position.symbol, "buy", price, quantity, notional, fee, reason))
     pnl = (position.entry_price - price) * quantity - position.entry_fee - fee
@@ -641,7 +641,7 @@ def run_spike_fade_backtest(
             if quantity <= 0:
                 continue
             notional = quantity * entry_price
-            fee = notional * config.fee_bps / Decimal("10000")
+            fee = notional * config.fee_for("taker") / Decimal("10000")
             cash += notional - fee
             target_price = entry_price - stop_distance * Decimal(str(spec.take_profit_r))
             positions[signal.symbol] = _LiveShort(
@@ -695,7 +695,7 @@ def run_spike_fade_backtest(
     benchmark_curve: list[tuple[str, Decimal]] = []
     if benchmark_bars:
         entry = config.execution_price(benchmark_bars[0].open, "buy")
-        fee_rate = config.fee_bps / Decimal("10000")
+        fee_rate = config.fee_for("taker") / Decimal("10000")
         quantity = config.initial_cash / (entry * (Decimal("1") + fee_rate))
         benchmark_cash = config.initial_cash - quantity * entry - quantity * entry * fee_rate
         benchmark_curve = [
@@ -921,9 +921,13 @@ def spike_fade_research_report(
             "symbol_leverage_caps": {symbol: str(value) for symbol, value in (config.max_leverage_by_symbol or {}).items()},
             "costs": {
                 "fee_bps": str(config.fee_bps),
+                "maker_fee_bps": str(config.fee_for("maker")),
+                "taker_fee_bps": str(config.fee_for("taker")),
                 "slippage_bps": str(config.slippage_bps),
                 "spread_bps": str(config.spread_bps),
                 "market_impact_bps": str(config.market_impact_bps),
+                "adverse_selection_bps": str(config.adverse_selection_bps),
+                "stop_gap_penalty_bps": str(config.stop_gap_penalty_bps),
                 "one_way_execution_bps": str(config.one_way_execution_bps),
             },
             "walk_forward": {"train_days": train_days, "test_days": test_days, "step_days": step_days},

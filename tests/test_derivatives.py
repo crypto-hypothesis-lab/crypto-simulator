@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from crypto_simulator.adapters.derivatives import BybitDerivativesAdapter, HyperliquidDerivativesAdapter, OKXDerivativesAdapter
+from crypto_simulator.adapters.derivatives import BybitDerivativesAdapter, HyperliquidDerivativesAdapter, MexcDerivativesAdapter, OKXDerivativesAdapter
 from crypto_simulator.derivatives import (
     DATA_STALE,
     DerivativesObservation,
@@ -126,6 +126,43 @@ def test_public_adapters_normalize_hyperliquid_bybit_and_okx() -> None:
     assert okx.open_interest_usd == Decimal("1000")
     assert okx.funding_interval_hours == Decimal("8")
     assert len(okx_client.calls) == 4
+
+
+def test_mexc_derivatives_snapshot_keeps_predicted_funding_timestamps_separate() -> None:
+    class MexcFakeClient:
+        def get(self, url):
+            if "/funding_rate/" in url:
+                return {
+                    "success": True,
+                    "data": {
+                        "symbol": "BTC_USDT",
+                        "fundingRate": "0.0008",
+                        "collectCycle": 8,
+                        "nextSettleTime": 1735804800000,
+                        "timestamp": 1735776001000,
+                    },
+                }
+            return {
+                "success": True,
+                "data": {
+                    "symbol": "BTC_USDT",
+                    "fairPrice": "100",
+                    "indexPrice": "99",
+                    "holdVol": "10",
+                    "amount24": "1000000",
+                    "timestamp": 1735776000000,
+                },
+            }
+
+    item = MexcDerivativesAdapter(MexcFakeClient()).fetch_snapshot("BTC", observed_at=AS_OF)
+    assert item.symbol == "BTC"
+    assert item.instrument == "BTC_USDT"
+    assert item.open_interest == Decimal("10")
+    assert item.funding_interval_hours == Decimal("8")
+    assert item.funding_status == "predicted_current"
+    assert item.next_funding_at == datetime.fromtimestamp(1735804800, tz=timezone.utc)
+    assert item.observed_at == AS_OF
+    assert item.published_at != item.observed_at
 
 
 def test_features_use_two_venue_median_and_classify_shadow_regime() -> None:

@@ -26,7 +26,13 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install simulator
-        run: python -m pip install .
+        run: python -m pip install ".[analysis]"
+      - name: Restore accumulated derivatives history
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: data/derivatives.duckdb
+          key: derivatives-duckdb-${{ github.run_id }}
+          restore-keys: derivatives-duckdb-
       - name: Collect public Shadow snapshot
         env:
           SHADOW_SYMBOLS: ${{ inputs.symbols }}
@@ -36,10 +42,18 @@ jobs:
           for symbol in "${symbols[@]}"; do
             args+=(--symbol "$symbol")
           done
-          python -m crypto_simulator derivatives-shadow "${args[@]}" --output state/derivatives-shadow.json
+          python -m crypto_simulator derivatives-shadow "${args[@]}" --database data/derivatives.duckdb --output state/derivatives-shadow.json
       - name: Upload Shadow report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: derivatives-shadow-${{ github.run_id }}
-          path: state/derivatives-shadow.json
+          path: |
+            state/derivatives-shadow.json
+            data/derivatives.duckdb
           retention-days: 30
+      - name: Save accumulated derivatives history
+        if: ${{ always() && hashFiles('data/derivatives.duckdb') != '' }}
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: data/derivatives.duckdb
+          key: derivatives-duckdb-${{ github.run_id }}

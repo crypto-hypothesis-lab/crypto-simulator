@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -17,6 +17,7 @@ from .adapters import (
     HyperliquidAdapter,
     HyperliquidDerivativesAdapter,
     MexcContractAdapter,
+    MexcDerivativesAdapter,
     OKXDerivativesAdapter,
 )
 from .backtest import BacktestConfig, run_backtest
@@ -28,12 +29,16 @@ from .promotion import PromotionPolicy, evaluate_promotion_gate
 from .evaluation import compare_evaluations
 from .research_report import build_research_report
 from .mexc_liquidity import LiquidityPolicy, assess_liquidity, build_liquidity_manifest, select_current_liquid_tickers
-from .research import StrategySpec, forward_test_report, research_report
+from .market_structure import build_market_structure_event_study
+from .research import StrategySpec, evaluate_result, forward_test_report, research_report
 from .spike_fade import default_spike_fade_specs, spike_fade_research_report
 from .limit_bracket import (
     build_limit_bracket_signal_event,
     default_limit_bracket_specs,
     default_mexc_event_specs,
+    default_mexc_event_v2_specs,
+    default_mexc_event_permission_specs,
+    default_event_permission_specs,
     limit_bracket_research_report,
 )
 from .signals import build_signal_event
@@ -67,6 +72,29 @@ def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def _record_research(
+    database: Path | None,
+    payload: dict[str, object],
+    *,
+    output: Path,
+    experiment_id: str | None = None,
+    stage: str = "backtest",
+    exchange: str | None = None,
+) -> str | None:
+    if database is None:
+        return None
+    from .research_ledger import DuckDbResearchLedger
+
+    summary = DuckDbResearchLedger(database).record(
+        payload,
+        experiment_id=experiment_id,
+        stage=stage,
+        exchange=exchange,
+        source_path=str(output),
+    )
+    return summary.run_id
+
+
 def _load_derivatives_observations(path: Path) -> list[DerivativesObservation]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(payload, dict) and isinstance(payload.get("observations"), list):
@@ -86,7 +114,7 @@ def _fetch_derivatives_observations(venues: list[str], symbols: list[str], obser
             except Exception as exc:
                 result.extend(DerivativesObservation.error_observation(venue, symbol, observed_at=observed_at, error=str(exc)) for symbol in symbols)
         else:
-            adapter = {"bybit": BybitDerivativesAdapter, "okx": OKXDerivativesAdapter}[venue]()
+            adapter = {"bybit": BybitDerivativesAdapter, "mexc": MexcDerivativesAdapter, "okx": OKXDerivativesAdapter}[venue]()
             for symbol in symbols:
                 try:
                     result.append(adapter.fetch_snapshot(symbol, observed_at=observed_at))
@@ -122,6 +150,14 @@ def _add_strategy_arguments(command: argparse.ArgumentParser) -> None:
     command.add_argument("--trend-slow", type=int, default=20)
     command.add_argument("--regime-fast", type=int, default=5)
     command.add_argument("--regime-slow", type=int, default=20)
+
+
+def _add_research_ledger_argument(command: argparse.ArgumentParser) -> None:
+    command.add_argument(
+        "--research-database",
+        type=Path,
+        help="append the complete report and normalized metrics to a local DuckDB research ledger",
+    )
 
 
 def _frozen_strategy_spec(args: argparse.Namespace) -> StrategySpec:
@@ -207,7 +243,7 @@ def main() -> None:
     _add_window_arguments(fetch_funding)
     fetch_funding.add_argument("--output", type=Path, required=True)
     derivatives_shadow = subparsers.add_parser("derivatives-shadow", help="collect public derivatives data and write a Shadow-only regime report")
-    derivatives_shadow.add_argument("--venue", action="append", choices=["hyperliquid", "bybit", "okx"], help="repeat to select public venues; default: all")
+    derivatives_shadow.add_argument("--venue", action="append", choices=["hyperliquid", "mexc", "bybit", "okx"], help="repeat to select public venues; default: Hyperliquid, MEXC, Bybit, and OKX")
     derivatives_shadow.add_argument("--symbol", action="append", help="repeat for BTC/ETH-style perpetual symbols; default: BTC and ETH")
     derivatives_shadow.add_argument("--input", type=Path, help="offline observation JSON fixture; skips live public API collection")
     derivatives_shadow.add_argument("--history", type=Path, help="additional historical observation JSON used for point-in-time changes")
@@ -217,7 +253,7 @@ def main() -> None:
     derivatives_shadow.add_argument("--output", type=Path, default=Path("state/derivatives-shadow.json"))
     mexc_liquid = subparsers.add_parser("mexc-liquid-select", help="select current MEXC perpetuals by public liquidity")
     mexc_liquid.add_argument("--output", type=Path, required=True)
-    mexc_liquid.add_argument("--max-symbols", type=int, default=12)
+    mexc_liquid.add_argument("--max-symbols", type=int, default=20)
     mexc_liquid.add_argument("--min-quote-turnover-24h", type=Decimal, default=Decimal("10000000"))
     mexc_liquid.add_argument("--max-spread-bps", type=Decimal, default=Decimal("25"))
     mexc_liquid.add_argument("--benchmark-symbol", default="BTC_USDT")
@@ -227,7 +263,7 @@ def main() -> None:
     mexc_audit.add_argument("--input", dest="inputs", action="append", required=True, metavar="SYMBOL=CSV_PATH")
     mexc_audit.add_argument("--output", type=Path, required=True)
     mexc_audit.add_argument("--interval", default="1hour")
-    mexc_audit.add_argument("--max-symbols", type=int, default=12)
+    mexc_audit.add_argument("--max-symbols", type=int, default=20)
     mexc_audit.add_argument("--min-quote-turnover-24h", type=Decimal, default=Decimal("10000000"))
     mexc_audit.add_argument("--min-median-daily-quote-turnover", type=Decimal, default=Decimal("5000000"))
     mexc_audit.add_argument("--max-spread-bps", type=Decimal, default=Decimal("25"))
@@ -249,6 +285,8 @@ def main() -> None:
     backtest.add_argument("--spread-bps", type=Decimal, default=Decimal("0"))
     backtest.add_argument("--market-impact-bps", type=Decimal, default=Decimal("0"))
     backtest.add_argument("--max-holding-days", type=int, default=30)
+    backtest.add_argument("--output", type=Path, default=Path("state/backtest.json"))
+    _add_research_ledger_argument(backtest)
     research = subparsers.add_parser("research", help="compare a finite strategy grid with walk-forward validation")
     research.add_argument("--input", type=Path, required=True)
     research.add_argument("--output", type=Path, default=Path("state/strategy-search.json"))
@@ -262,6 +300,7 @@ def main() -> None:
     research.add_argument("--spread-bps", type=Decimal, default=Decimal("0"))
     research.add_argument("--market-impact-bps", type=Decimal, default=Decimal("0"))
     research.add_argument("--max-holding-days", type=int, default=30)
+    _add_research_ledger_argument(research)
     forward = subparsers.add_parser("forward-test", help="evaluate one frozen strategy on the latest holdout window")
     forward.add_argument("--input", type=Path, required=True)
     forward.add_argument("--output", type=Path, default=Path("state/forward-test.json"))
@@ -274,6 +313,7 @@ def main() -> None:
     forward.add_argument("--spread-bps", type=Decimal, default=Decimal("0"))
     forward.add_argument("--market-impact-bps", type=Decimal, default=Decimal("0"))
     forward.add_argument("--max-holding-days", type=int, default=30)
+    _add_research_ledger_argument(forward)
     portfolio = subparsers.add_parser("portfolio-research", help="research regime-aware cross-sectional spot/margin/perpetual strategies")
     portfolio.add_argument("--market", choices=["spot", "margin", "perpetual"], required=True)
     portfolio.add_argument("--input", dest="inputs", action="append", required=True, metavar="SYMBOL=CSV_PATH")
@@ -293,6 +333,7 @@ def main() -> None:
     portfolio.add_argument("--rebalance-every-bars", type=int, default=1)
     portfolio.add_argument("--max-gross-leverage", type=Decimal)
     portfolio.add_argument("--max-leverage-map", type=Path, help="JSON object mapping symbols to exchange leverage caps")
+    _add_research_ledger_argument(portfolio)
     spike_fade = subparsers.add_parser("spike-fade-research", help="research short-after-pump exhaustion strategies")
     spike_fade.add_argument("--market", choices=["margin", "perpetual"], required=True)
     spike_fade.add_argument("--input", dest="inputs", action="append", required=True, metavar="SYMBOL=CSV_PATH")
@@ -311,9 +352,20 @@ def main() -> None:
     spike_fade.add_argument("--margin-interest-bps-per-day", type=Decimal)
     spike_fade.add_argument("--max-gross-leverage", type=Decimal)
     spike_fade.add_argument("--max-leverage-map", type=Path, help="JSON object mapping symbols to exchange leverage caps")
+    _add_research_ledger_argument(spike_fade)
     limit_bracket = subparsers.add_parser("limit-bracket-research", help="research multi-timeframe limit-entry bracket strategies")
     limit_bracket.add_argument("--market", choices=["spot", "margin", "perpetual"], required=True)
-    limit_bracket.add_argument("--profile", choices=["standard", "mexc-event"], default="standard")
+    limit_bracket.add_argument(
+        "--profile",
+        choices=["standard", "mexc-event", "mexc-event-v2", "mexc-event-permission", "event-permission"],
+        default="standard",
+    )
+    limit_bracket.add_argument(
+        "--strategy-venue",
+        choices=["mexc", "hyperliquid", "bitbank"],
+        default="mexc",
+        help="venue label used by the venue-neutral event-permission profile",
+    )
     limit_bracket.add_argument("--input", dest="inputs", action="append", required=True, metavar="SYMBOL=CSV_PATH")
     limit_bracket.add_argument("--funding", dest="fundings", action="append", type=Path, help="funding JSON from fetch-funding; repeat per symbol")
     limit_bracket.add_argument("--benchmark-symbol")
@@ -322,14 +374,20 @@ def main() -> None:
     limit_bracket.add_argument("--train-days", type=int, default=180)
     limit_bracket.add_argument("--test-days", type=int, default=60)
     limit_bracket.add_argument("--step-days", type=int, default=60)
+    limit_bracket.add_argument("--minimum-training-trades", type=int, default=20)
     limit_bracket.add_argument("--initial-cash", type=Decimal, default=Decimal("100000"))
     limit_bracket.add_argument("--fee-bps", type=Decimal)
+    limit_bracket.add_argument("--maker-fee-bps", type=Decimal)
+    limit_bracket.add_argument("--taker-fee-bps", type=Decimal)
     limit_bracket.add_argument("--slippage-bps", type=Decimal)
     limit_bracket.add_argument("--spread-bps", type=Decimal)
     limit_bracket.add_argument("--market-impact-bps", type=Decimal)
+    limit_bracket.add_argument("--adverse-selection-bps", type=Decimal, default=Decimal("0"))
+    limit_bracket.add_argument("--stop-gap-penalty-bps", type=Decimal, default=Decimal("0"))
     limit_bracket.add_argument("--margin-interest-bps-per-day", type=Decimal)
     limit_bracket.add_argument("--max-gross-leverage", type=Decimal)
     limit_bracket.add_argument("--max-leverage-map", type=Path, help="JSON object mapping symbols to exchange leverage caps")
+    _add_research_ledger_argument(limit_bracket)
     bracket_signal = subparsers.add_parser("limit-bracket-signal", help="write the latest investment decision snapshot")
     bracket_signal.add_argument("--market", choices=["spot", "margin", "perpetual"], required=True)
     bracket_signal.add_argument("--input", dest="inputs", action="append", required=True, metavar="SYMBOL=CSV_PATH")
@@ -339,8 +397,25 @@ def main() -> None:
     bracket_signal.add_argument("--interval", default="1hour")
     bracket_signal.add_argument(
         "--profile",
-        choices=["fast", "balanced", "deep", "mexc-short", "mexc-long", "mexc-short-rejection"],
+        choices=[
+            "fast",
+            "balanced",
+            "deep",
+            "event-permission",
+            "mexc-short",
+            "mexc-long",
+            "mexc-short-rejection",
+            "mexc-short-v2",
+            "mexc-long-v2",
+            "mexc-short-rejection-v2",
+        ],
         default="balanced",
+    )
+    bracket_signal.add_argument(
+        "--strategy-venue",
+        choices=["mexc", "hyperliquid", "bitbank"],
+        default="mexc",
+        help="venue label used by the venue-neutral event-permission profile",
     )
     bracket_signal.add_argument("--max-gross-leverage", type=Decimal)
     bracket_signal.add_argument("--max-leverage-map", type=Path, help="JSON object mapping symbols to exchange leverage caps")
@@ -358,6 +433,27 @@ def main() -> None:
     duckdb_import = subparsers.add_parser("duckdb-import", help="import normalized CSV candles into local DuckDB")
     duckdb_import.add_argument("--input", type=Path, required=True)
     duckdb_import.add_argument("--database", type=Path, default=Path("data/crypto-market.duckdb"))
+    market_structure = subparsers.add_parser("market-structure-study", help="run point-in-time OI/Funding event studies without creating orders")
+    market_structure.add_argument("--input", dest="inputs", action="append", required=True, metavar="SYMBOL=CSV_PATH")
+    market_structure.add_argument("--derivatives", type=Path, help="derivatives observation JSON or shadow report")
+    market_structure.add_argument("--derivatives-database", type=Path, help="DuckDB containing derivatives_observations")
+    market_structure.add_argument("--min-venues", type=int, default=1)
+    market_structure.add_argument("--output", type=Path, default=Path("state/market-structure-study.json"))
+    market_structure.add_argument("--research-database", type=Path, default=Path("data/research-ledger.duckdb"))
+    research_record = subparsers.add_parser("research-record", help="archive any existing JSON research result, including failures")
+    research_record.add_argument("--input", type=Path, required=True)
+    research_record.add_argument("--database", type=Path, default=Path("data/research-ledger.duckdb"))
+    research_record.add_argument("--experiment-id")
+    research_record.add_argument("--stage", choices=["backtest", "walk_forward", "cost_stress", "forward_test", "paper", "shadow_live", "small_live", "production"], default="backtest")
+    research_record.add_argument("--exchange")
+    research_record.add_argument("--hypothesis")
+    research_record.add_argument("--conclusion")
+    research_record.add_argument("--tag", action="append", default=[])
+    research_history = subparsers.add_parser("research-history", help="export compact research-ledger history for the next experiment")
+    research_history.add_argument("--database", type=Path, default=Path("data/research-ledger.duckdb"))
+    research_history.add_argument("--output", type=Path, default=Path("state/research-history.json"))
+    research_history.add_argument("--failure-output", type=Path, help="optional Git-friendly failure-reasons JSON")
+    research_history.add_argument("--limit", type=int, default=100)
     promotion = subparsers.add_parser("promotion-gate", help="evaluate a causal cost-aware Paper promotion gate")
     promotion.add_argument("--input", type=Path, required=True, help="JSON array or object with an outcomes array")
     promotion.add_argument("--output", type=Path, default=Path("state/promotion-gate.json"))
@@ -381,6 +477,89 @@ def main() -> None:
     research_report_command.add_argument("--exchange", choices=["bitbank", "hyperliquid", "mexc"], required=True)
     research_report_command.add_argument("--report-url", default="")
     args = parser.parse_args()
+
+    if args.command == "research-record":
+        try:
+            payload = json.loads(args.input.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("research artifact must be a JSON object")
+            from .research_ledger import DuckDbResearchLedger
+
+            summary = DuckDbResearchLedger(args.database).record(
+                payload,
+                experiment_id=args.experiment_id,
+                stage=args.stage,
+                exchange=args.exchange,
+                hypothesis=args.hypothesis,
+                conclusion=args.conclusion,
+                tags=tuple(args.tag),
+                source_path=str(args.input),
+            )
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            parser.error(f"invalid research artifact: {exc}")
+        print(f"database={args.database} run_id={summary.run_id} status={summary.status} strategies={len(summary.strategy_ids)}")
+        return
+
+    if args.command == "research-history":
+        from .research_ledger import DuckDbResearchLedger, FAILURE_SCHEMA_VERSION, LEDGER_SCHEMA_VERSION
+
+        report = {
+            "schema_version": LEDGER_SCHEMA_VERSION,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "runs": DuckDbResearchLedger(args.database).evidence(limit=args.limit),
+        }
+        _write_json(args.output, report)
+        if args.failure_output:
+            _write_json(
+                args.failure_output,
+                {
+                    "schema_version": FAILURE_SCHEMA_VERSION,
+                    "generated_at": report["generated_at"],
+                    "runs": [
+                        {
+                            "run_id": run["run_id"],
+                            "experiment_id": run["experiment_id"],
+                            "recorded_at": run["recorded_at"],
+                            "exchange": run["exchange"],
+                            "stage": run["stage"],
+                            "status": run["status"],
+                            "strategy_ids": run["strategy_ids"],
+                            "failure_reasons": run.get("performance_failures", []),
+                        }
+                        for run in report["runs"]
+                        if run.get("performance_failures")
+                    ],
+                },
+            )
+        print(f"saved={args.output} runs={len(report['runs'])}")
+        return
+
+    if args.command == "market-structure-study":
+        if bool(args.derivatives) == bool(args.derivatives_database):
+            parser.error("provide exactly one of --derivatives or --derivatives-database")
+        try:
+            parsed_inputs = [_parse_portfolio_input(value) for value in args.inputs]
+            universe, _ = _load_named_universe(parsed_inputs)
+            if args.derivatives:
+                observations = _load_derivatives_observations(args.derivatives)
+            else:
+                from .duckdb_store import DuckDbDerivativesStore
+
+                observations = DuckDbDerivativesStore(args.derivatives_database).load(market_type="perpetual")
+            report = build_market_structure_event_study(universe, observations, min_venues=args.min_venues)
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+            parser.error(f"invalid market-structure input: {exc}")
+        _write_json(args.output, report)
+        run_id = _record_research(
+            args.research_database,
+            report,
+            output=args.output,
+            experiment_id="market-structure-events-v1",
+            stage="backtest",
+            exchange="mexc",
+        )
+        print(f"saved={args.output} events={report['summary']['event_count']} ledger_run={run_id}")
+        return
 
     if args.command == "demo":
         result = run_backtest(synthetic_bars(), SmaCrossStrategy(5, 20), BacktestConfig(initial_cash=Decimal("100000")))
@@ -520,19 +699,68 @@ def main() -> None:
                 regime_slow=args.regime_slow,
             )
         )
+        config = BacktestConfig(
+            initial_cash=args.initial_cash,
+            fee_bps=args.fee_bps,
+            slippage_bps=args.slippage_bps,
+            spread_bps=args.spread_bps,
+            market_impact_bps=args.market_impact_bps,
+            max_holding_days=args.max_holding_days,
+        )
         result = run_backtest(
             bars,
             strategy,
-            BacktestConfig(
-                initial_cash=args.initial_cash,
-                fee_bps=args.fee_bps,
-                slippage_bps=args.slippage_bps,
-                spread_bps=args.spread_bps,
-                market_impact_bps=args.market_impact_bps,
-                max_holding_days=args.max_holding_days,
-            ),
+            config,
         )
-        print(f"bars={len(bars)} trades={len(result.trades)} final_equity={result.final_equity} return={result.return_fraction:.4%}")
+        strategy_id = (
+            f"sma_{args.fast}_{args.slow}_single_v1"
+            if args.single_timeframe
+            else f"mtf_sma_{args.fast}_{args.slow}_{args.trend_fast}_{args.trend_slow}_{args.regime_fast}_{args.regime_slow}_v1"
+        )
+        metrics = evaluate_result(result, bars, config)
+        report = {
+            "schema_version": "crypto.backtest.v1",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "dataset": {
+                "exchange": bars[0].exchange,
+                "market": bars[0].market_type,
+                "symbols": [bars[0].symbol],
+                "start": bars[0].timestamp.isoformat(),
+                "end": bars[-1].timestamp.isoformat(),
+                "bars": len(bars),
+            },
+            "method": {
+                "market": bars[0].market_type,
+                "execution": "closed-bar signal, next-bar open",
+                "costs": {
+                    "fee_bps": str(config.fee_bps),
+                    "slippage_bps": str(config.slippage_bps),
+                    "spread_bps": str(config.spread_bps),
+                    "market_impact_bps": str(config.market_impact_bps),
+                },
+            },
+            "full_sample": [
+                {
+                    "strategy": {"name": strategy_id, "strategy_id": strategy_id, "strategy_version": strategy_id},
+                    "metrics": asdict(metrics),
+                    "trades": [
+                        {
+                            "timestamp": trade.timestamp,
+                            "side": trade.side,
+                            "price": str(trade.price),
+                            "quantity": str(trade.quantity),
+                            "fee": str(trade.fee),
+                            "reason": trade.reason,
+                        }
+                        for trade in result.trades
+                    ],
+                }
+            ],
+            "summary": {"status": "full_sample_only", "promotion_decision": "hold"},
+        }
+        _write_json(args.output, report)
+        _record_research(args.research_database, report, output=args.output, stage="backtest")
+        print(f"saved={args.output} bars={len(bars)} trades={len(result.trades)} final_equity={result.final_equity} return={result.return_fraction:.4%}")
         return
 
     if args.command == "research":
@@ -553,6 +781,7 @@ def main() -> None:
             ),
         )
         _write_json(args.output, report)
+        _record_research(args.research_database, report, output=args.output, stage="walk_forward")
         summary = report["summary"]
         print(
             f"saved={args.output} candidates={summary['candidate_count']} "
@@ -577,6 +806,7 @@ def main() -> None:
             interval=args.interval,
         )
         _write_json(args.output, report)
+        _record_research(args.research_database, report, output=args.output, stage="forward_test")
         print(
             f"saved={args.output} strategy={report['strategy']['name']} "
             f"holdout_bars={report['holdout']['bars']} status={report['status']}"
@@ -638,6 +868,7 @@ def main() -> None:
             ),
         )
         _write_json(args.output, report)
+        _record_research(args.research_database, report, output=args.output, stage="walk_forward")
         summary = report["summary"]
         print(
             f"saved={args.output} market={args.market} candidates={summary['candidate_count']} "
@@ -692,6 +923,7 @@ def main() -> None:
             ),
         )
         _write_json(args.output, report)
+        _record_research(args.research_database, report, output=args.output, stage="walk_forward")
         summary = report["summary"]
         print(
             f"saved={args.output} market={args.market} candidates={summary['candidate_count']} "
@@ -725,7 +957,16 @@ def main() -> None:
                 leverage_map = {str(symbol): Decimal(str(value)) for symbol, value in payload.items()}
             except (OSError, json.JSONDecodeError, ValueError) as exc:
                 parser.error(f"invalid --max-leverage-map: {exc}")
-        specs = default_mexc_event_specs(args.market) if args.profile == "mexc-event" else default_limit_bracket_specs(args.market)
+        if args.profile == "event-permission":
+            specs = default_event_permission_specs(args.market, venue=args.strategy_venue)
+        elif args.profile == "mexc-event-permission":
+            specs = default_mexc_event_permission_specs(args.market)
+        elif args.profile == "mexc-event-v2":
+            specs = default_mexc_event_v2_specs(args.market)
+        elif args.profile == "mexc-event":
+            specs = default_mexc_event_specs(args.market)
+        else:
+            specs = default_limit_bracket_specs(args.market)
         report = limit_bracket_research_report(
             universe,
             market=args.market,
@@ -737,18 +978,24 @@ def main() -> None:
             train_days=args.train_days,
             test_days=args.test_days,
             step_days=args.step_days,
+            minimum_training_trades=args.minimum_training_trades,
             config=PortfolioConfig(
                 initial_cash=args.initial_cash,
                 fee_bps=args.fee_bps if args.fee_bps is not None else (Decimal("5") if args.market == "perpetual" else Decimal("10")),
+                maker_fee_bps=args.maker_fee_bps,
+                taker_fee_bps=args.taker_fee_bps,
                 slippage_bps=args.slippage_bps if args.slippage_bps is not None else Decimal("5"),
                 spread_bps=args.spread_bps if args.spread_bps is not None else Decimal("10"),
                 market_impact_bps=args.market_impact_bps if args.market_impact_bps is not None else Decimal("5"),
+                adverse_selection_bps=args.adverse_selection_bps,
+                stop_gap_penalty_bps=args.stop_gap_penalty_bps,
                 margin_interest_bps_per_day=margin_interest,
                 max_gross_leverage=leverage,
                 max_leverage_by_symbol=leverage_map,
             ),
         )
         _write_json(args.output, report)
+        _record_research(args.research_database, report, output=args.output, stage="walk_forward")
         summary = report["summary"]
         print(
             f"saved={args.output} market={args.market} candidates={summary['candidate_count']} "
@@ -774,12 +1021,28 @@ def main() -> None:
                 leverage_map = {str(symbol): Decimal(str(value)) for symbol, value in payload.items()}
             except (OSError, json.JSONDecodeError, ValueError) as exc:
                 parser.error(f"invalid --max-leverage-map: {exc}")
-        if args.profile in {"mexc-short", "mexc-long", "mexc-short-rejection"}:
-            event_specs = default_mexc_event_specs(args.market)
+        if args.profile == "event-permission":
+            spec = default_event_permission_specs(args.market, venue=args.strategy_venue)[0]
+        elif args.profile in {
+            "mexc-short",
+            "mexc-long",
+            "mexc-short-rejection",
+            "mexc-short-v2",
+            "mexc-long-v2",
+            "mexc-short-rejection-v2",
+        }:
+            event_specs = (
+                default_mexc_event_v2_specs(args.market)
+                if args.profile.endswith("-v2")
+                else default_mexc_event_specs(args.market)
+            )
             spec = {
                 "mexc-short": event_specs[0],
                 "mexc-long": event_specs[1],
                 "mexc-short-rejection": event_specs[2],
+                "mexc-short-v2": event_specs[0],
+                "mexc-long-v2": event_specs[1],
+                "mexc-short-rejection-v2": event_specs[2],
             }[args.profile]
         else:
             profiles = {"fast": 0, "balanced": 1, "deep": 2}
@@ -838,7 +1101,7 @@ def main() -> None:
         return
 
     if args.command == "derivatives-shadow":
-        venues = args.venue or ["hyperliquid", "bybit", "okx"]
+        venues = args.venue or ["hyperliquid", "mexc", "bybit", "okx"]
         symbols = args.symbol or ["BTC", "ETH"]
         as_of = _parse_utc_datetime(args.as_of) if args.as_of else datetime.now(timezone.utc)
         observations: list[DerivativesObservation] = []
