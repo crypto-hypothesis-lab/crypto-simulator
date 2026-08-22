@@ -4,7 +4,7 @@
   "strategy_id": "spot_limit_retest_balanced_0p35_1p5_2R_14d",
   "strategy_version": "spot_limit_retest_balanced_0p35_1p5_2R_14d",
   "event_type": "crypto_investment_decision",
-  "generated_at": "2026-08-22T03:02:28.411021+00:00",
+  "generated_at": "2026-08-22T03:51:54.416810+00:00",
   "idempotency_key": "decision:spot_limit_retest_balanced_0p35_1p5_2R_14d:2026-08-22T03:00:00+00:00:spot",
   "source": {
     "exchange": [
