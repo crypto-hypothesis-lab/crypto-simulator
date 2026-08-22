@@ -93,7 +93,9 @@ class BybitDerivativesAdapter:
 
     def fetch_snapshot(self, symbol: str, *, observed_at: datetime | None = None) -> DerivativesObservation:
         observed_at = (observed_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
-        normalized = symbol.replace("/", "").replace(":USDT", "").replace("_", "").upper()
+        normalized = symbol.replace("/", "").replace(":USDT", "").replace("_", "").replace("-", "").upper()
+        if not normalized.endswith(("USDT", "USDC", "USD")):
+            normalized = f"{normalized}USDT"
         response = self.client.get(f"{self.endpoint}?category=linear&symbol={quote(normalized)}")
         if not isinstance(response, dict) or response.get("retCode") not in (0, "0"):
             code = response.get("retCode") if isinstance(response, dict) else "unknown"

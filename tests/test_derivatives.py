@@ -110,6 +110,7 @@ def test_public_adapters_normalize_hyperliquid_bybit_and_okx() -> None:
     assert bybit.instrument == "BTCUSDT"
     assert bybit.open_interest_usd == Decimal("1000")
     assert bybit.funding_interval_hours == Decimal("8")
+    assert "symbol=BTCUSDT" in bybit_client.calls[0][1]
 
     okx_client = FakeClient(
         {
