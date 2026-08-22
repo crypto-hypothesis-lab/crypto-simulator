@@ -19,6 +19,9 @@ This repository is intentionally safe to publish. It contains no API keys, priva
   require rejection confirmation, then enter at the next bar open with ATR
   stops, targets, time stops, funding/credit costs, and walk-forward reporting.
 - A rolling CSV collector that merges candles without duplicates.
+- A Shadow-only derivatives regime layer for public Hyperliquid, Bybit, and
+  OKX perpetual data. It normalizes OI/funding/price observations, checks
+  freshness and venue quorum, and never changes the canonical strategy.
 - Backtest reports and deterministic paper-signal JSON output.
 - A frozen forward-test report for the latest holdout window, including trades,
   costs, and a Buy & Hold comparison.
@@ -84,7 +87,14 @@ python -m crypto_simulator signal --input data/bitbank_btc_jpy_1hour.csv --inter
 # For a baseline comparison only:
 python -m crypto_simulator signal --single-timeframe --input data/bitbank_btc_jpy_1hour.csv --interval 1hour --output state/latest-signal.json
 python -m crypto_simulator duckdb-import --input data/bitbank_btc_jpy_1hour.csv --database data/crypto-market.duckdb
+python -m crypto_simulator derivatives-shadow --output state/derivatives-shadow.json
 ```
+
+The derivatives Shadow layer is documented in
+[`docs/derivatives-regime.md`](docs/derivatives-regime.md). It is an evidence
+stream for later ablation and walk-forward research, not a Paper or Live order
+instruction. Missing history, stale data, and a failed venue quorum are
+reported explicitly and remain fail-closed.
 
 `collect` keeps a rolling overlap so a late candle does not create a duplicate.
 The hourly public collection workflow also writes `data/bitbank_btc_jpy_bracket_signal.json`, a read-only `crypto.bracket-signal.v1` snapshot for the private paper bridge. It contains no credentials; the private gate must still reject stale snapshots and re-check every candidate.\n\nThe default `signal` command ignores the currently forming candle, evaluates all

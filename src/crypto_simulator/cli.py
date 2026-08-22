@@ -8,10 +8,21 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
-from .adapters import BinanceAdapter, BitbankAdapter, CcxtPublicAdapter, GmoCoinAdapter, HyperliquidAdapter, MexcContractAdapter
+from .adapters import (
+    BinanceAdapter,
+    BitbankAdapter,
+    BybitDerivativesAdapter,
+    CcxtPublicAdapter,
+    GmoCoinAdapter,
+    HyperliquidAdapter,
+    HyperliquidDerivativesAdapter,
+    MexcContractAdapter,
+    OKXDerivativesAdapter,
+)
 from .backtest import BacktestConfig, run_backtest
 from .dataset import load_funding_json, load_ohlcv_csv, merge_ohlcv_csv, write_funding_json, write_ohlcv_csv
 from .models import OHLCVBar
+from .derivatives import DerivativesFeaturePolicy, DerivativesObservation, build_derivatives_shadow_report
 from .portfolio import PortfolioConfig, default_theme_specs, funding_rates_by_interval, portfolio_research_report
 from .promotion import PromotionPolicy, evaluate_promotion_gate
 from .evaluation import compare_evaluations
@@ -54,6 +65,34 @@ def _write_csv(path: Path, bars: list[OHLCVBar]) -> None:
 def _write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _load_derivatives_observations(path: Path) -> list[DerivativesObservation]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(payload, dict) and isinstance(payload.get("observations"), list):
+        payload = payload["observations"]
+    if not isinstance(payload, list):
+        raise ValueError("derivatives input must be an array or an object with an observations array")
+    return [DerivativesObservation.from_dict(item) for item in payload if isinstance(item, dict)]
+
+
+def _fetch_derivatives_observations(venues: list[str], symbols: list[str], observed_at: datetime) -> list[DerivativesObservation]:
+    result: list[DerivativesObservation] = []
+    for venue in venues:
+        if venue == "hyperliquid":
+            adapter = HyperliquidDerivativesAdapter()
+            try:
+                result.extend(adapter.fetch_snapshots(symbols, observed_at=observed_at))
+            except Exception as exc:
+                result.extend(DerivativesObservation.error_observation(venue, symbol, observed_at=observed_at, error=str(exc)) for symbol in symbols)
+        else:
+            adapter = {"bybit": BybitDerivativesAdapter, "okx": OKXDerivativesAdapter}[venue]()
+            for symbol in symbols:
+                try:
+                    result.append(adapter.fetch_snapshot(symbol, observed_at=observed_at))
+                except Exception as exc:
+                    result.append(DerivativesObservation.error_observation(venue, symbol, observed_at=observed_at, error=str(exc)))
+    return result
 
 
 def _load_named_universe(parsed_inputs: list[tuple[str, Path]]) -> tuple[dict[str, list[OHLCVBar]], dict[str, str]]:
@@ -167,6 +206,14 @@ def main() -> None:
     fetch_funding.add_argument("--symbol", required=True)
     _add_window_arguments(fetch_funding)
     fetch_funding.add_argument("--output", type=Path, required=True)
+    derivatives_shadow = subparsers.add_parser("derivatives-shadow", help="collect public derivatives data and write a Shadow-only regime report")
+    derivatives_shadow.add_argument("--venue", action="append", choices=["hyperliquid", "bybit", "okx"], help="repeat to select public venues; default: all")
+    derivatives_shadow.add_argument("--symbol", action="append", help="repeat for BTC/ETH-style perpetual symbols; default: BTC and ETH")
+    derivatives_shadow.add_argument("--input", type=Path, help="offline observation JSON fixture; skips live public API collection")
+    derivatives_shadow.add_argument("--history", type=Path, help="additional historical observation JSON used for point-in-time changes")
+    derivatives_shadow.add_argument("--as-of", help="UTC ISO-8601 evaluation timestamp; defaults to now")
+    derivatives_shadow.add_argument("--min-venues", type=int, default=2)
+    derivatives_shadow.add_argument("--output", type=Path, default=Path("state/derivatives-shadow.json"))
     mexc_liquid = subparsers.add_parser("mexc-liquid-select", help="select current MEXC perpetuals by public liquidity")
     mexc_liquid.add_argument("--output", type=Path, required=True)
     mexc_liquid.add_argument("--max-symbols", type=int, default=12)
@@ -787,6 +834,30 @@ def main() -> None:
         )
         write_funding_json(args.output, points)
         print(f"saved={args.output} points={len(points)}")
+        return
+
+    if args.command == "derivatives-shadow":
+        venues = args.venue or ["hyperliquid", "bybit", "okx"]
+        symbols = args.symbol or ["BTC", "ETH"]
+        as_of = _parse_utc_datetime(args.as_of) if args.as_of else datetime.now(timezone.utc)
+        observations: list[DerivativesObservation] = []
+        try:
+            if args.history:
+                observations.extend(_load_derivatives_observations(args.history))
+            if args.input:
+                observations.extend(_load_derivatives_observations(args.input))
+            else:
+                observations.extend(_fetch_derivatives_observations(venues, symbols, as_of))
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+            parser.error(f"invalid derivatives input: {exc}")
+        report = build_derivatives_shadow_report(
+            observations,
+            as_of=as_of,
+            policy=DerivativesFeaturePolicy(min_venues=args.min_venues),
+        )
+        _write_json(args.output, report)
+        labels = ",".join(f"{symbol}={item['label']}" for symbol, item in report["regimes"].items()) or "none"
+        print(f"saved={args.output} mode=shadow canonical_strategy_changed=false regimes={labels}")
         return
 
     if args.command == "duckdb-import":
