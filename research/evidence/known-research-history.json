@@ -1,7 +1,341 @@
 {
   "schema_version": "crypto.research-ledger.v2",
-  "generated_at": "2026-08-22T14:16:06.244121+00:00",
+  "generated_at": "2026-08-22T14:53:23.275987+00:00",
   "runs": [
+    {
+      "run_id": "research:badd050bcfecd3be5c3bd6b2",
+      "experiment_id": "research-report:mexc_event_long_permission_filter_v1",
+      "recorded_at": "2026-08-22T14:52:42.464244+00:00",
+      "artifact_type": "research-report",
+      "exchange": null,
+      "market": "perpetual",
+      "stage": "walk_forward",
+      "status": "not_validated",
+      "strategy_ids": [
+        "mexc_event_long_permission_filter_v1"
+      ],
+      "dataset_start": "2025-08-20T00:00:00+00:00",
+      "dataset_end": "2026-08-20T00:00:00+00:00",
+      "strategy_results": [
+        {
+          "strategy_id": "mexc_event_long_permission_filter_v1",
+          "strategy_version": "mexc_event_long_permission_filter_v1",
+          "outcome_status": "full_sample_positive",
+          "metrics": {
+            "annualized_return": 0.016278479504342247,
+            "average_gross_exposure": 0.000997034638749945,
+            "average_holding_days": 0.1988095238095238,
+            "average_mae_r": 0.5726521605559842,
+            "average_mfe_r": 1.8676003430807135,
+            "benchmark_return": -0.3862075089521754,
+            "cancelled_orders": 4,
+            "excess_return": 0.4024859884565177,
+            "expectancy_per_trade": 0.0004670691777695043,
+            "fill_rate": 0.8974358974358975,
+            "filled_entries": 35,
+            "financing_cost_fraction": 0.0,
+            "funding_cost_fraction": 6.894171759041309e-05,
+            "max_drawdown": 0.003660094199795849,
+            "max_gross_exposure": 0.12902266282803213,
+            "orders": 39,
+            "profit_factor": 2.3886366616404753,
+            "robust_score": 0.012618385304546387,
+            "round_trips": 35,
+            "sharpe": 0.436316066607732,
+            "signals": 39,
+            "stop_losses": 9,
+            "take_profits": 13,
+            "time_stops": 13,
+            "total_return": 0.016278479504342237,
+            "turnover": 3.9725542209032523,
+            "win_rate": 0.5142857142857142
+          }
+        }
+      ],
+      "walk_forward_outcomes": {
+        "negative_or_flat": 1,
+        "no_trade": 5
+      },
+      "performance_failures": [
+        {
+          "reason_code": "negative_oos_window_present",
+          "scope": "run",
+          "strategy_id": null,
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "At least one out-of-sample window lost money.",
+          "evidence": {
+            "negative_oos_windows": 1.0
+          }
+        }
+      ],
+      "diagnostics": [
+        {
+          "reason_code": "flat_or_no_trade_oos_windows",
+          "scope": "run",
+          "strategy_id": null,
+          "category": "not_measured",
+          "severity": "warning",
+          "message": "Some out-of-sample windows had no qualifying trade or were flat; they are not wins.",
+          "evidence": {
+            "flat_or_no_trade_oos_windows": 5.0
+          }
+        },
+        {
+          "reason_code": "no_positive_oos_windows",
+          "scope": "run",
+          "strategy_id": null,
+          "category": "validation_blocked",
+          "severity": "blocker",
+          "message": "No Walk Forward test window produced a positive return.",
+          "evidence": {
+            "positive_oos_windows": 0.0,
+            "walk_forward_windows": 6
+          }
+        },
+        {
+          "reason_code": "no_qualified_training_candidate",
+          "scope": "run",
+          "strategy_id": null,
+          "category": "validation_blocked",
+          "severity": "warning",
+          "message": "The training window had no candidate passing the minimum research floors.",
+          "evidence": {
+            "no_qualified_strategy_windows": 3.0
+          }
+        }
+      ],
+      "dataset": {
+        "common_bars": 8761,
+        "end": "2026-08-20T00:00:00+00:00",
+        "interval": "1hour",
+        "market": "perpetual",
+        "quality": {
+          "bars": 96371,
+          "contiguous": true,
+          "coverage": 1.0,
+          "duplicate_bars": 0,
+          "expected_bars": 96371,
+          "gap_count": 0,
+          "interval": "1hour",
+          "largest_gap_hours": 0.0,
+          "missing_bars": 0,
+          "series": [
+            {
+              "bars": 8761,
+              "duplicate_bars": 0,
+              "end": "2026-08-20T00:00:00+00:00",
+              "exchange": "mexc",
+              "expected_bars": 8761,
+              "gap_count": 0,
+              "largest_gap_hours": 0.0,
+              "market_type": "perpetual",
+              "missing_bars": 0,
+              "start": "2025-08-20T00:00:00+00:00",
+              "symbol": "BTC_USDT"
+            },
+            {
+              "bars": 8761,
+              "duplicate_bars": 0,
+              "end": "2026-08-20T00:00:00+00:00",
+              "exchange": "mexc",
+              "expected_bars": 8761,
+              "gap_count": 0,
+              "largest_gap_hours": 0.0,
+              "market_type": "perpetual",
+              "missing_bars": 0,
+              "start": "2025-08-20T00:00:00+00:00",
+              "symbol": "DOGE_USDT"
+            },
+            {
+              "bars": 8761,
+              "duplicate_bars": 0,
+              "end": "2026-08-20T00:00:00+00:00",
+              "exchange": "mexc",
+              "expected_bars": 8761,
+              "gap_count": 0,
+              "largest_gap_hours": 0.0,
+              "market_type": "perpetual",
+              "missing_bars": 0,
+              "start": "2025-08-20T00:00:00+00:00",
+              "symbol": "ETH_USDT"
+            },
+            {
+              "bars": 8761,
+              "duplicate_bars": 0,
+              "end": "2026-08-20T00:00:00+00:00",
+              "exchange": "mexc",
+              "expected_bars": 8761,
+              "gap_count": 0,
+              "largest_gap_hours": 0.0,
+              "market_type": "perpetual",
+              "missing_bars": 0,
+              "start": "2025-08-20T00:00:00+00:00",
+              "symbol": "HYPE_USDT"
+            },
+            {
+              "bars": 8761,
+              "duplicate_bars": 0,
+              "end": "2026-08-20T00:00:00+00:00",
+              "exchange": "mexc",
+              "expected_bars": 8761,
+              "gap_count": 0,
+              "largest_gap_hours": 0.0,
+              "market_type": "perpetual",
+              "missing_bars": 0,
+              "start": "2025-08-20T00:00:00+00:00",
+              "symbol": "LINK_USDT"
+            },
+            {
+              "bars": 8761,
+              "duplicate_bars": 0,
+              "end": "2026-08-20T00:00:00+00:00",
+              "exchange": "mexc",
+              "expected_bars": 8761,
+              "gap_count": 0,
+              "largest_gap_hours": 0.0,
+              "market_type": "perpetual",
+              "missing_bars": 0,
+              "start": "2025-08-20T00:00:00+00:00",
+              "symbol": "PEPE_USDT"
+            },
+            {
+              "bars": 8761,
+              "duplicate_bars": 0,
+              "end": "2026-08-20T00:00:00+00:00",
+              "exchange": "mexc",
+              "expected_bars": 8761,
+              "gap_count": 0,
+              "largest_gap_hours": 0.0,
+              "market_type": "perpetual",
+              "missing_bars": 0,
+              "start": "2025-08-20T00:00:00+00:00",
+              "symbol": "SOL_USDT"
+            },
+            {
+              "bars": 8761,
+              "duplicate_bars": 0,
+              "end": "2026-08-20T00:00:00+00:00",
+              "exchange": "mexc",
+              "expected_bars": 8761,
+              "gap_count": 0,
+              "largest_gap_hours": 0.0,
+              "market_type": "perpetual",
+              "missing_bars": 0,
+              "start": "2025-08-20T00:00:00+00:00",
+              "symbol": "SUI_USDT"
+            },
+            {
+              "bars": 8761,
+              "duplicate_bars": 0,
+              "end": "2026-08-20T00:00:00+00:00",
+              "exchange": "mexc",
+              "expected_bars": 8761,
+              "gap_count": 0,
+              "largest_gap_hours": 0.0,
+              "market_type": "perpetual",
+              "missing_bars": 0,
+              "start": "2025-08-20T00:00:00+00:00",
+              "symbol": "TAO_USDT"
+            },
+            {
+              "bars": 8761,
+              "duplicate_bars": 0,
+              "end": "2026-08-20T00:00:00+00:00",
+              "exchange": "mexc",
+              "expected_bars": 8761,
+              "gap_count": 0,
+              "largest_gap_hours": 0.0,
+              "market_type": "perpetual",
+              "missing_bars": 0,
+              "start": "2025-08-20T00:00:00+00:00",
+              "symbol": "XRP_USDT"
+            },
+            {
+              "bars": 8761,
+              "duplicate_bars": 0,
+              "end": "2026-08-20T00:00:00+00:00",
+              "exchange": "mexc",
+              "expected_bars": 8761,
+              "gap_count": 0,
+              "largest_gap_hours": 0.0,
+              "market_type": "perpetual",
+              "missing_bars": 0,
+              "start": "2025-08-20T00:00:00+00:00",
+              "symbol": "ZEC_USDT"
+            }
+          ],
+          "series_count": 11
+        },
+        "series_count": 11,
+        "start": "2025-08-20T00:00:00+00:00",
+        "symbols": [
+          "BTC_USDT",
+          "DOGE_USDT",
+          "ETH_USDT",
+          "HYPE_USDT",
+          "LINK_USDT",
+          "PEPE_USDT",
+          "SOL_USDT",
+          "SUI_USDT",
+          "TAO_USDT",
+          "XRP_USDT",
+          "ZEC_USDT"
+        ]
+      },
+      "method": {
+        "bracket": "filled entry attaches an ATR stop trigger and R-multiple take-profit limit; stop is checked first when both are touched",
+        "costs": {
+          "adverse_selection_bps": "2",
+          "fee_bps": "5",
+          "maker_fee_bps": "2",
+          "market_impact_bps": "5",
+          "one_way_execution_bps": "15",
+          "slippage_bps": "5",
+          "spread_bps": "10",
+          "stop_gap_penalty_bps": "10",
+          "stress_multipliers": [
+            1.0,
+            1.5,
+            2.0
+          ],
+          "taker_fee_bps": "5"
+        },
+        "entry": "long limit = signal close - ATR * entry_offset; short limit = signal close + ATR * entry_offset; no market fallback; better opening gaps are filled at open",
+        "funding_rates_included": true,
+        "layers": {
+          "1d_regime": "benchmark fast/slow trend plus universe breadth",
+          "1hour_execution": "closed-bar breakout confirmation followed by a resting pullback/retest limit order",
+          "4h_theme": "cross-sectional relative momentum, trend alignment, and volume acceleration"
+        },
+        "margin_interest_bps_per_day": "0",
+        "market": "perpetual",
+        "order_lifetime": "unfilled parent limit expires after the configured bars; max holding period is capped at 1 days and 8 hours per strategy, never exceeding 30 days",
+        "symbol_leverage_caps": {},
+        "walk_forward": {
+          "minimum_training_trades": 20,
+          "no_qualified_candidate_policy": "NO_STRATEGY / NO_TRADE",
+          "selection_profit_factor_floor": 1.15,
+          "step_days": 30,
+          "test_days": 30,
+          "train_days": 180
+        }
+      },
+      "summary": {
+        "candidate_count": 1,
+        "data_quality_status": "complete",
+        "flat_or_no_trade_oos_windows": 5,
+        "median_oos_excess_return": 0.02569205820771202,
+        "median_oos_return": -0.00261736519550801,
+        "negative_oos_windows": 1,
+        "no_qualified_strategy_windows": 3,
+        "positive_oos_excess_fraction": 1,
+        "positive_oos_return_fraction": 0,
+        "positive_oos_windows": 0,
+        "status": "not_validated",
+        "walk_forward_windows": 6
+      }
+    },
     {
       "run_id": "research:31ed8e2c541004980a4a79de",
       "experiment_id": "crypto.backtest.v1:mtf_sma_20_50_5_20_5_20_v1",

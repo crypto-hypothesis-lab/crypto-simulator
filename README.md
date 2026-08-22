@@ -136,6 +136,10 @@ use `limit-bracket-signal --profile mexc-short` or `--profile mexc-long` and
 provide Funding JSON; both profiles remain research candidates until the
 cost-aware `promotion-gate` passes.
 
+The `mexc-event-permission` profile is the long-only comparison: `risk_on`
+permits the event entry, while neutral/risk-off block new entries; it never
+switches into a short strategy and is capped at 1x for research.
+
 `forward-test` takes one already-frozen strategy configuration and evaluates
 only the latest holdout window. Earlier candles are indicator warm-up and
 cannot create reported trades. The JSON is deliberately marked

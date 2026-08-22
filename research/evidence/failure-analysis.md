@@ -34,6 +34,25 @@ tuning alone is therefore unlikely to repair the strategy. The next test must
 add a different information source, especially OI and Funding, while keeping
 the entry and cost assumptions frozen for comparison.
 
+### Permission-only backtest: `mexc_event_long_permission_filter_v1`
+
+This directly tests the proposed architecture: `risk_on` permits the long
+event entry, while `neutral` and `risk_off` block new entries. The regime never
+switches the system into a short strategy, and the research cap is 1x.
+
+- 11 MEXC perpetual symbols, approximately one year of 1-hour candles.
+- 35 round trips, +1.63% full-sample return, PF 2.39, 51.4% win rate, and
+  0.37% maximum drawdown.
+- Six OOS windows: zero positive-return windows, one negative window at
+  -0.26%, five flat/no-trade windows, and three windows without a qualified
+  training candidate.
+- Status: `not_validated`; no Paper promotion.
+
+Conclusion: avoiding regime-based direction switching is the safer architecture,
+but this permission filter did not demonstrate a reproducible OOS edge. The
+next improvement should add OI/Funding event information, not tune the regime
+thresholds or add an automatic short branch.
+
 ### Regime momentum portfolio
 
 The 5x run looked strong enough to be labelled `candidate_requires_forward_test`,

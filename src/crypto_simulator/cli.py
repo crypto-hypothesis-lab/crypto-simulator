@@ -37,6 +37,7 @@ from .limit_bracket import (
     default_limit_bracket_specs,
     default_mexc_event_specs,
     default_mexc_event_v2_specs,
+    default_mexc_event_permission_specs,
     limit_bracket_research_report,
 )
 from .signals import build_signal_event
@@ -353,7 +354,11 @@ def main() -> None:
     _add_research_ledger_argument(spike_fade)
     limit_bracket = subparsers.add_parser("limit-bracket-research", help="research multi-timeframe limit-entry bracket strategies")
     limit_bracket.add_argument("--market", choices=["spot", "margin", "perpetual"], required=True)
-    limit_bracket.add_argument("--profile", choices=["standard", "mexc-event", "mexc-event-v2"], default="standard")
+    limit_bracket.add_argument(
+        "--profile",
+        choices=["standard", "mexc-event", "mexc-event-v2", "mexc-event-permission"],
+        default="standard",
+    )
     limit_bracket.add_argument("--input", dest="inputs", action="append", required=True, metavar="SYMBOL=CSV_PATH")
     limit_bracket.add_argument("--funding", dest="fundings", action="append", type=Path, help="funding JSON from fetch-funding; repeat per symbol")
     limit_bracket.add_argument("--benchmark-symbol")
@@ -938,7 +943,9 @@ def main() -> None:
                 leverage_map = {str(symbol): Decimal(str(value)) for symbol, value in payload.items()}
             except (OSError, json.JSONDecodeError, ValueError) as exc:
                 parser.error(f"invalid --max-leverage-map: {exc}")
-        if args.profile == "mexc-event-v2":
+        if args.profile == "mexc-event-permission":
+            specs = default_mexc_event_permission_specs(args.market)
+        elif args.profile == "mexc-event-v2":
             specs = default_mexc_event_v2_specs(args.market)
         elif args.profile == "mexc-event":
             specs = default_mexc_event_specs(args.market)

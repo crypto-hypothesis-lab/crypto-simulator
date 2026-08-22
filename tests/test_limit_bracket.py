@@ -7,6 +7,7 @@ from crypto_simulator.limit_bracket import (
     build_limit_bracket_signal_event,
     default_mexc_event_specs,
     default_mexc_event_v2_specs,
+    default_mexc_event_permission_specs,
     _build_timeframe_view,
     _LiveBracket,
     _MarketContext,
@@ -86,6 +87,18 @@ def test_mexc_event_router_v2_has_distinct_lineage_and_permission_model() -> Non
     assert all(spec.regime_model == "router_v2" for spec in v2)
     assert all(spec.strategy_family.endswith("_router_v2") for spec in v2)
     assert all(spec.required_regime == baseline.required_regime for spec, baseline in zip(v2, v1))
+
+
+def test_mexc_event_permission_profile_is_long_only_and_risk_on_gated() -> None:
+    specs = default_mexc_event_permission_specs("perpetual")
+    assert len(specs) == 1
+    spec = specs[0]
+    assert spec.name == "mexc_event_long_permission_filter_v1"
+    assert spec.strategy_family == "mexc_event_long_permission_filter"
+    assert spec.required_regime == "risk_on"
+    assert spec.risk_off_shorts is False
+    assert spec.max_gross_leverage == 1.0
+    assert spec.symbol_max_leverage == 1.0
 
 
 def test_volatility_router_uses_only_trailing_history() -> None:

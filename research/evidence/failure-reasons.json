@@ -1,7 +1,31 @@
 {
   "schema_version": "crypto.research-failure.v2",
-  "generated_at": "2026-08-22T14:16:06.244121+00:00",
+  "generated_at": "2026-08-22T14:53:23.275987+00:00",
   "runs": [
+    {
+      "run_id": "research:badd050bcfecd3be5c3bd6b2",
+      "experiment_id": "research-report:mexc_event_long_permission_filter_v1",
+      "recorded_at": "2026-08-22T14:52:42.464244+00:00",
+      "exchange": null,
+      "stage": "walk_forward",
+      "status": "not_validated",
+      "strategy_ids": [
+        "mexc_event_long_permission_filter_v1"
+      ],
+      "failure_reasons": [
+        {
+          "reason_code": "negative_oos_window_present",
+          "scope": "run",
+          "strategy_id": null,
+          "category": "negative_performance",
+          "severity": "warning",
+          "message": "At least one out-of-sample window lost money.",
+          "evidence": {
+            "negative_oos_windows": 1.0
+          }
+        }
+      ]
+    },
     {
       "run_id": "research:926de65f6c2597dcc9ccb390",
       "experiment_id": "research-report:mexc_event_long_pullback_atr_v1,mexc_event_short_daily_red_green_3_4_v1,mexc_event_short_rejection_volume_v1",

@@ -481,6 +481,32 @@ def default_mexc_event_v2_specs(market: str) -> list[LimitBracketSpec]:
     ]
 
 
+def default_mexc_event_permission_specs(market: str) -> list[LimitBracketSpec]:
+    """Return the long-only event entry with regime used only as permission.
+
+    This profile is the direct test of the current research conclusion: a
+    risk-on regime permits the event entry, while neutral/risk-off regimes
+    simply produce no new entry. It never reverses into a short strategy based
+    on the regime, and it keeps a separate strategy ID for clean comparison.
+    """
+
+    long_spec = next(
+        spec for spec in default_mexc_event_specs(market)
+        if spec.name == "mexc_event_long_pullback_atr_v1"
+    )
+    return [
+        replace(
+            long_spec,
+            name="mexc_event_long_permission_filter_v1",
+            strategy_family="mexc_event_long_permission_filter",
+            risk_off_shorts=False,
+            max_gross_leverage=1.0,
+            symbol_max_leverage=1.0,
+            required_regime="risk_on",
+        )
+    ]
+
+
 @dataclass(frozen=True, slots=True)
 class LimitBracketSignal:
     symbol: str

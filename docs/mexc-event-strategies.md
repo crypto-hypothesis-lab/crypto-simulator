@@ -28,6 +28,25 @@ signal close. It uses the same `1.5 ATR` stop, `2R` target, four-bar expiry,
 eight-hour maximum holding time, 0.10% risk budget, one position, and 3x hard
 gross cap.
 
+### `mexc_event_long_permission_filter_v1`
+
+This is the long-only permission experiment. A `risk_on` regime allows the
+existing long event entry; `neutral` and `risk_off` block new entries. The
+regime never selects a short strategy, and the research leverage cap is 1x.
+Run it with:
+
+```console
+python -m crypto_simulator limit-bracket-research \
+  --market perpetual \
+  --profile mexc-event-permission \
+  --benchmark-symbol BTC_USDT \
+  --max-gross-leverage 1
+```
+
+The 2026-08-22 11-symbol run was positive full-sample but had zero positive
+OOS windows and remains `not_validated`. This profile is therefore a safer
+directional architecture, not a validated profitable strategy.
+
 ### `mexc_event_short_rejection_volume_v1`
 
 This is a stricter short candidate for perpetuals. It requires a `risk_off`
