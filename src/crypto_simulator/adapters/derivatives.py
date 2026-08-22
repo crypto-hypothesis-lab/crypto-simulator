@@ -69,6 +69,7 @@ class HyperliquidDerivativesAdapter:
                     open_interest=context.get("openInterest"),
                     funding_rate=context.get("funding"),
                     funding_interval_hours=Decimal("1"),
+                    funding_status="predicted_current",
                     volume_24h_usd=context.get("dayNtlVlm"),
                     instrument=name,
                     status="fresh" if not missing else "degraded",
@@ -105,6 +106,7 @@ class BybitDerivativesAdapter:
         if not rows:
             raise ValueError(f"Bybit perpetual not found: {normalized}")
         row = rows[0]
+        exchange_timestamp = _timestamp_ms(response.get("time"), observed_at)
         fields = {"mark_price": row.get("markPrice"), "open_interest_usd": row.get("openInterestValue"), "funding_rate": row.get("fundingRate")}
         missing = tuple(key for key, value in fields.items() if value in (None, ""))
         return DerivativesObservation(
@@ -112,17 +114,87 @@ class BybitDerivativesAdapter:
             symbol=_base_symbol(normalized),
             market_type="perpetual",
             observed_at=observed_at,
-            exchange_timestamp=_timestamp_ms(response.get("time"), observed_at),
+            exchange_timestamp=exchange_timestamp,
+            published_at=exchange_timestamp,
             mark_price=row.get("markPrice"),
             index_price=row.get("indexPrice"),
             open_interest=row.get("openInterest"),
             open_interest_usd=row.get("openInterestValue"),
             funding_rate=row.get("fundingRate"),
             funding_interval_hours=row.get("fundingIntervalHour"),
+            funding_status="predicted_current",
+            next_funding_at=_timestamp_ms(row.get("nextFundingTime"), observed_at) if row.get("nextFundingTime") else None,
             volume_24h_usd=row.get("turnover24h"),
             instrument=normalized,
             status="fresh" if not missing else "degraded",
             source="bybit.v5.market.tickers",
+            missing_fields=missing,
+        )
+
+
+class MexcDerivativesAdapter:
+    """Public MEXC perpetual OI, mark/index price, and funding snapshot."""
+
+    venue = "mexc"
+    ticker_endpoint = "https://contract.mexc.com/api/v1/contract/ticker"
+    funding_endpoint = "https://contract.mexc.com/api/v1/contract/funding_rate"
+
+    def __init__(self, client: JsonHttpClient | None = None) -> None:
+        self.client = client or JsonHttpClient(user_agent="crypto-simulator/mexc-derivatives")
+
+    @staticmethod
+    def _symbol(value: str) -> str:
+        normalized = value.upper().replace("/", "_").replace("-", "_").replace(":USDT", "_USDT")
+        if "_" not in normalized and normalized.endswith("USDT"):
+            normalized = f"{normalized[:-4]}_USDT"
+        elif "_" not in normalized:
+            normalized = f"{normalized}_USDT"
+        return normalized
+
+    @staticmethod
+    def _data(response: Any, *, name: str) -> dict[str, Any]:
+        if not isinstance(response, dict) or response.get("success") is not True:
+            raise ValueError(f"unexpected MEXC {name} response")
+        data = response.get("data")
+        if isinstance(data, list):
+            if len(data) != 1 or not isinstance(data[0], dict):
+                raise ValueError(f"unexpected MEXC {name} rows")
+            data = data[0]
+        if not isinstance(data, dict):
+            raise ValueError(f"unexpected MEXC {name} data")
+        return data
+
+    def fetch_snapshot(self, symbol: str, *, observed_at: datetime | None = None) -> DerivativesObservation:
+        observed_at = (observed_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
+        instrument = self._symbol(symbol)
+        ticker = self._data(self.client.get(f"{self.ticker_endpoint}?symbol={quote(instrument)}"), name="ticker")
+        funding = self._data(self.client.get(f"{self.funding_endpoint}/{quote(instrument)}"), name="funding")
+        ticker_timestamp = _timestamp_ms(ticker.get("timestamp"), observed_at)
+        funding_timestamp = _timestamp_ms(funding.get("timestamp"), observed_at)
+        values = {
+            "mark_price": ticker.get("fairPrice") or ticker.get("lastPrice"),
+            "open_interest": ticker.get("holdVol"),
+            "funding_rate": funding.get("fundingRate") or ticker.get("fundingRate"),
+        }
+        missing = tuple(key for key, value in values.items() if value in (None, ""))
+        return DerivativesObservation(
+            venue=self.venue,
+            symbol=_base_symbol(instrument),
+            market_type="perpetual",
+            instrument=instrument,
+            observed_at=observed_at,
+            exchange_timestamp=ticker_timestamp,
+            published_at=funding_timestamp,
+            mark_price=values["mark_price"],
+            index_price=ticker.get("indexPrice"),
+            open_interest=values["open_interest"],
+            funding_rate=values["funding_rate"],
+            funding_interval_hours=funding.get("collectCycle"),
+            funding_status="predicted_current",
+            next_funding_at=_timestamp_ms(funding.get("nextSettleTime"), observed_at) if funding.get("nextSettleTime") else None,
+            volume_24h_usd=ticker.get("amount24"),
+            status="fresh" if not missing else "degraded",
+            source="mexc.contract.ticker+funding_rate",
             missing_fields=missing,
         )
 
@@ -168,7 +240,6 @@ class OkxDerivativesAdapter:
         mark_row = mark[0] if mark else {}
         funding_row = funding[0] if funding else {}
         exchange_timestamp = _timestamp_ms(ticker_row.get("ts"), observed_at)
-        funding_timestamp = _timestamp_ms(funding_row.get("fundingTime"), exchange_timestamp) if funding_row.get("fundingTime") else exchange_timestamp
         values = {"mark_price": mark_row.get("markPx") or ticker_row.get("last"), "open_interest_usd": oi_row.get("oiUsd"), "funding_rate": funding_row.get("fundingRate")}
         missing = tuple(key for key, value in values.items() if value in (None, ""))
         return DerivativesObservation(
@@ -177,12 +248,15 @@ class OkxDerivativesAdapter:
             market_type="perpetual",
             observed_at=observed_at,
             exchange_timestamp=exchange_timestamp,
+            published_at=exchange_timestamp,
             mark_price=values["mark_price"],
             index_price=ticker_row.get("idxPx"),
             open_interest=oi_row.get("oi"),
             open_interest_usd=values["open_interest_usd"],
             funding_rate=values["funding_rate"],
             funding_interval_hours=self._funding_interval_hours(funding_row.get("fundingInterval")),
+            funding_status="predicted_current",
+            next_funding_at=_timestamp_ms(funding_row.get("nextFundingTime"), exchange_timestamp) if funding_row.get("nextFundingTime") else None,
             volume_24h_usd=ticker_row.get("volCcy24h") or ticker_row.get("vol24h"),
             instrument=inst_id,
             status="fresh" if not missing else "degraded",

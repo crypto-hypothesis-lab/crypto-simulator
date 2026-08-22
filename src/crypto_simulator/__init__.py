@@ -25,6 +25,8 @@ from .portfolio import (
 from .research import PerformanceMetrics, StrategySpec, dataset_quality, forward_test_report, research_report
 from .promotion import PromotionPolicy, evaluate_promotion_gate
 from .mexc_liquidity import LiquidityAssessment, LiquidityPolicy, assess_liquidity, build_liquidity_manifest, select_current_liquid_tickers
+from .market_structure import MarketStructureEventSpec, build_market_structure_event_study, default_market_structure_event_specs
+from .research_ledger import DuckDbResearchLedger, ResearchRunSummary
 from .spike_fade import (
     SpikeFadeMetrics,
     SpikeFadeResult,
@@ -40,6 +42,7 @@ from .limit_bracket import (
     LimitBracketSpec,
     default_limit_bracket_specs,
     default_mexc_event_specs,
+    default_mexc_event_v2_specs,
     build_limit_bracket_signal_event,
     evaluate_limit_bracket_result,
     limit_bracket_research_report,
@@ -82,6 +85,11 @@ __all__ = [
     "assess_liquidity",
     "build_liquidity_manifest",
     "select_current_liquid_tickers",
+    "MarketStructureEventSpec",
+    "build_market_structure_event_study",
+    "default_market_structure_event_specs",
+    "DuckDbResearchLedger",
+    "ResearchRunSummary",
     "run_backtest",
     "run_portfolio_backtest",
     "SpikeFadeMetrics",
@@ -96,6 +104,7 @@ __all__ = [
     "LimitBracketSpec",
     "default_limit_bracket_specs",
     "default_mexc_event_specs",
+    "default_mexc_event_v2_specs",
     "build_limit_bracket_signal_event",
     "evaluate_limit_bracket_result",
     "limit_bracket_research_report",

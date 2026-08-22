@@ -50,7 +50,7 @@ hypotheses. They are not silently substituted for the ATR-normalized version.
 
 The initial four-symbol set (`BTC_USDT`, `ETH_USDT`, `SOL_USDT`, and
 `XRP_USDT`) is only a stable comparison baseline. The simulator now selects up
-to 12 current MEXC USDT perpetuals using 24-hour quote turnover and top-of-book
+to 20 current MEXC USDT perpetuals using 24-hour quote turnover and top-of-book
 spread, then excludes MEXC contracts classified as stocks, ETFs, or
 commodities. Each selected history is audited for coverage and quote turnover.
 
@@ -88,3 +88,22 @@ These candidates must be run against MEXC 1-hour candles with Funding data and
 walk-forward validation. A positive full-sample result alone is insufficient.
 Live execution remains outside this repository and is not enabled by these
 changes.
+
+## Router v2 research profile
+
+`default_mexc_event_v2_specs()` exposes separate `*_router_v2` strategy IDs
+for the same three event hypotheses. It adds a causal benchmark volatility
+permission layer:
+
+- `normal`: retain the v1 `risk_on`/`risk_off`/`neutral` decision;
+- `stress`: benchmark realized volatility is at or above its trailing 90th
+  percentile, so no new entry is allowed;
+- `insufficient_volatility_history`: no entry is allowed until the rolling
+  volatility history is long enough.
+
+The public signal keeps the compatible regime label `neutral` during stress
+and records the more specific state plus volatility metrics separately. This
+avoids breaking the Operations contract while making the reason visible to
+research and monitoring. The scheduled v1 Paper workflow does not use v2;
+run `limit-bracket-research --profile mexc-event-v2` or the `*-v2` signal
+profiles for isolated comparison only.

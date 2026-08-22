@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from crypto_simulator.adapters.mexc_contract import MexcTicker
-from crypto_simulator.mexc_liquidity import LiquidityPolicy, assess_liquidity, select_current_liquid_tickers
+from crypto_simulator.mexc_liquidity import LiquidityPolicy, assess_liquidity, build_liquidity_manifest, select_current_liquid_tickers
 from crypto_simulator.models import OHLCVBar
 
 
@@ -94,3 +94,11 @@ def test_current_liquidity_selection_keeps_benchmark_and_respects_spread() -> No
     )
 
     assert [item.symbol for item in selected] == ["BTC_USDT", "ETH_USDT"]
+
+
+def test_liquidity_manifest_has_a_frozen_point_in_time_identity() -> None:
+    manifest = build_liquidity_manifest([ticker("BTC_USDT", "1000"), ticker("ETH_USDT", "900")])
+    assert manifest["schema_version"] == "crypto.point-in-time-universe.v1"
+    assert manifest["universe_id"].startswith("mexc:2026-01-30:")
+    assert manifest["selected_at"] == "2026-01-30T00:00:00+00:00"
+    assert manifest["effective_until"] == "2026-01-31T00:00:00+00:00"

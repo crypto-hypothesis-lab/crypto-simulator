@@ -11,7 +11,7 @@ on:
       max_symbols:
         description: "Maximum current liquid crypto perpetuals, including BTC"
         required: false
-        default: "12"
+        default: "20"
         type: string
       min_quote_turnover_24h:
         description: "Minimum current 24h quote turnover in USDT"
@@ -53,12 +53,24 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install simulator
-        run: python -m pip install .
+        run: python -m pip install ".[analysis]"
+      - name: Restore research evidence ledger
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: data/research-ledger.duckdb
+          key: research-ledger-${{ github.run_id }}
+          restore-keys: research-ledger-
+      - name: Restore accumulated derivatives history for event studies
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: data/derivatives.duckdb
+          key: derivatives-reader-${{ github.run_id }}
+          restore-keys: derivatives-duckdb-
       - name: Select current liquid crypto universe
         run: |
           mkdir -p /tmp/mexc
           python -m crypto_simulator mexc-liquid-select \
-            --max-symbols "${{ inputs.max_symbols || '12' }}" \
+            --max-symbols "${{ inputs.max_symbols || '20' }}" \
             --min-quote-turnover-24h "${{ inputs.min_quote_turnover_24h || '10000000' }}" \
             --max-spread-bps "${{ inputs.max_spread_bps || '25' }}" \
             --benchmark-symbol BTC_USDT \
@@ -137,7 +149,7 @@ jobs:
           --selection state/mexc-liquid-universe.json
           $MEXC_HISTORY_INPUT_ARGS
           --interval 1hour
-          --max-symbols "${{ inputs.max_symbols || '12' }}"
+          --max-symbols "${{ inputs.max_symbols || '20' }}"
           --min-quote-turnover-24h "${{ inputs.min_quote_turnover_24h || '10000000' }}"
           --min-median-daily-quote-turnover "${{ inputs.min_median_daily_quote_turnover || '5000000' }}"
           --max-spread-bps "${{ inputs.max_spread_bps || '25' }}"
@@ -170,6 +182,15 @@ jobs:
           print("eligible_symbols=" + ",".join(manifest["eligible_symbols"]))
           print("rejected_symbols=" + ",".join(manifest["rejected_symbols"]))
           PY
+      - name: Archive the point-in-time universe manifest
+        run: >-
+          python -m crypto_simulator research-record
+          --input state/mexc-liquid-universe-audited.json
+          --database data/research-ledger.duckdb
+          --experiment-id mexc-point-in-time-universe
+          --exchange mexc
+          --tag universe
+          --tag point-in-time
       - name: Run event-strategy research
         run: >-
           python -m crypto_simulator limit-bracket-research
@@ -183,12 +204,32 @@ jobs:
           --test-days 30
           --step-days 30
           --fee-bps 5
+          --maker-fee-bps 2
+          --taker-fee-bps 5
           --slippage-bps 5
           --spread-bps 10
           --market-impact-bps 5
-          --max-gross-leverage 5
+          --adverse-selection-bps 2
+          --stop-gap-penalty-bps 10
+          --max-gross-leverage 1
           --max-leverage-map "$MEXC_MAX_LEVERAGE_MAP"
+          --research-database data/research-ledger.duckdb
           --output state/mexc-liquid-event-research.json
+      - name: Measure OI and Funding market-structure events
+        if: ${{ hashFiles('data/derivatives.duckdb') != '' }}
+        run: >-
+          python -m crypto_simulator market-structure-study
+          $MEXC_ELIGIBLE_INPUT_ARGS
+          --derivatives-database data/derivatives.duckdb
+          --min-venues 1
+          --research-database data/research-ledger.duckdb
+          --output state/mexc-market-structure-study.json
+      - name: Export compact research history
+        run: >-
+          python -m crypto_simulator research-history
+          --database data/research-ledger.duckdb
+          --output state/research-history.json
+          --failure-output state/research-failures.json
       - name: Build research decision report
         run: |
           python -m crypto_simulator research-report \
@@ -209,6 +250,15 @@ jobs:
               env.write("PAPER_PROFILE=" + profile + "\n")
           print("paper_profile=" + (profile or "none"))
           PY
+      - name: Detect notification configuration
+        env:
+          NOTIFY_ADMIN_TOKEN: ${{ secrets.NOTIFY_ADMIN_TOKEN }}
+        run: |
+          if [ -n "$NOTIFY_ADMIN_TOKEN" ]; then
+            echo "NOTIFY_CONFIGURED=true" >> "$GITHUB_ENV"
+          else
+            echo "NOTIFY_CONFIGURED=false" >> "$GITHUB_ENV"
+          fi
       - name: Generate latest Paper bracket candidate
         if: ${{ env.PAPER_PROFILE != '' }}
         run: >-
@@ -223,7 +273,7 @@ jobs:
           --max-leverage-map "$MEXC_MAX_LEVERAGE_MAP"
           --output state/mexc-latest-bracket-signal.json
       - name: Report research result to Discord
-        if: ${{ secrets.NOTIFY_ADMIN_TOKEN != '' }}
+        if: ${{ env.NOTIFY_CONFIGURED == 'true' }}
         env:
           NOTIFY_ADMIN_TOKEN: ${{ secrets.NOTIFY_ADMIN_TOKEN }}
           NOTIFY_URL: https://crypto-hypothesis-lab-notifier.bej1550.workers.dev
@@ -234,7 +284,7 @@ jobs:
           --header "Content-Type: application/json"
           --data-binary @state/mexc-research-report.json
       - name: Report Paper candidate to Discord and private Paper bridge
-        if: ${{ env.PAPER_PROFILE != '' && secrets.NOTIFY_ADMIN_TOKEN != '' }}
+        if: ${{ env.PAPER_PROFILE != '' && env.NOTIFY_CONFIGURED == 'true' }}
         env:
           NOTIFY_ADMIN_TOKEN: ${{ secrets.NOTIFY_ADMIN_TOKEN }}
           NOTIFY_URL: https://crypto-hypothesis-lab-notifier.bej1550.workers.dev
@@ -245,7 +295,7 @@ jobs:
           --header "Content-Type: application/json"
           --data-binary @state/mexc-latest-bracket-signal.json
       - name: Warn when Discord reporting is not configured
-        if: ${{ secrets.NOTIFY_ADMIN_TOKEN == '' }}
+        if: ${{ env.NOTIFY_CONFIGURED != 'true' }}
         run: echo "NOTIFY_ADMIN_TOKEN is not configured; research ran but Discord/Paper bridge reporting was skipped."
       - name: Upload liquid-universe research report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -258,5 +308,15 @@ jobs:
             state/mexc-liquid-event-research.json
             state/mexc-research-report.json
             state/mexc-latest-bracket-signal.json
+            state/research-history.json
+            state/research-failures.json
+            state/mexc-market-structure-study.json
+            data/research-ledger.duckdb
           if-no-files-found: ignore
           retention-days: 30
+      - name: Save research evidence ledger
+        if: ${{ always() && hashFiles('data/research-ledger.duckdb') != '' }}
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: data/research-ledger.duckdb
+          key: research-ledger-${{ github.run_id }}

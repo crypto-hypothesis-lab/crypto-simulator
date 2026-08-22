@@ -88,6 +88,9 @@ python -m crypto_simulator signal --input data/bitbank_btc_jpy_1hour.csv --inter
 python -m crypto_simulator signal --single-timeframe --input data/bitbank_btc_jpy_1hour.csv --interval 1hour --output state/latest-signal.json
 python -m crypto_simulator duckdb-import --input data/bitbank_btc_jpy_1hour.csv --database data/crypto-market.duckdb
 python -m crypto_simulator derivatives-shadow --database data/derivatives.duckdb --output state/derivatives-shadow.json
+python -m crypto_simulator market-structure-study --input BTC=data/mexc/BTC_USDT_1h.csv --derivatives-database data/derivatives.duckdb --research-database data/research-ledger.duckdb --output state/market-structure-study.json
+python -m crypto_simulator research-record --input state/old-failed-research.json --database data/research-ledger.duckdb --conclusion rejected
+python -m crypto_simulator research-history --database data/research-ledger.duckdb --output research/evidence/known-research-history.json --failure-output research/evidence/failure-reasons.json
 ```
 
 When `--database` is supplied, snapshots are upserted into local DuckDB and

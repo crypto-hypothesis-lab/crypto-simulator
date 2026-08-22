@@ -36,6 +36,8 @@ def test_derivatives_duckdb_store_upserts_and_restores_history(tmp_path: Path) -
         open_interest_usd="1000",
         funding_rate="0.0008",
         funding_interval_hours="8",
+        funding_status="predicted_current",
+        next_funding_at=datetime(2025, 1, 1, 8, tzinfo=timezone.utc),
         status="fresh",
         source="test",
     )
@@ -46,3 +48,5 @@ def test_derivatives_duckdb_store_upserts_and_restores_history(tmp_path: Path) -
     assert loaded[0].open_interest_usd == Decimal("1000")
     assert loaded[0].funding_interval_hours == Decimal("8")
     assert loaded[0].instrument == "BTCUSDT"
+    assert loaded[0].funding_status == "predicted_current"
+    assert loaded[0].next_funding_at == datetime(2025, 1, 1, 8, tzinfo=timezone.utc)

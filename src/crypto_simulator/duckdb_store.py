@@ -147,12 +147,15 @@ class DuckDbDerivativesStore:
                     instrument VARCHAR,
                     observed_at TIMESTAMPTZ NOT NULL,
                     exchange_timestamp TIMESTAMPTZ,
+                    published_at TIMESTAMPTZ,
                     mark_price DECIMAL(38, 18),
                     index_price DECIMAL(38, 18),
                     open_interest DECIMAL(38, 18),
                     open_interest_usd DECIMAL(38, 18),
                     funding_rate DECIMAL(38, 18),
                     funding_interval_hours DECIMAL(38, 18),
+                    funding_status VARCHAR NOT NULL DEFAULT 'unknown',
+                    next_funding_at TIMESTAMPTZ,
                     volume_24h_usd DECIMAL(38, 18),
                     status VARCHAR NOT NULL,
                     source VARCHAR NOT NULL,
@@ -164,6 +167,9 @@ class DuckDbDerivativesStore:
                 """
             )
             connection.execute("ALTER TABLE derivatives_observations ADD COLUMN IF NOT EXISTS instrument VARCHAR")
+            connection.execute("ALTER TABLE derivatives_observations ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ")
+            connection.execute("ALTER TABLE derivatives_observations ADD COLUMN IF NOT EXISTS funding_status VARCHAR DEFAULT 'unknown'")
+            connection.execute("ALTER TABLE derivatives_observations ADD COLUMN IF NOT EXISTS next_funding_at TIMESTAMPTZ")
 
     def upsert(self, observations: list[DerivativesObservation]) -> int:
         self.initialize()
@@ -175,12 +181,15 @@ class DuckDbDerivativesStore:
                 item.instrument,
                 item.observed_at,
                 item.exchange_timestamp,
+                item.published_at,
                 item.mark_price,
                 item.index_price,
                 item.open_interest,
                 item.open_interest_usd,
                 item.funding_rate,
                 item.funding_interval_hours,
+                item.funding_status,
+                item.next_funding_at,
                 item.volume_24h_usd,
                 item.status,
                 item.source,
@@ -196,19 +205,22 @@ class DuckDbDerivativesStore:
             connection.executemany(
                 """
                 INSERT INTO derivatives_observations (
-                    venue, symbol, market_type, instrument, observed_at, exchange_timestamp,
+                    venue, symbol, market_type, instrument, observed_at, exchange_timestamp, published_at,
                     mark_price, index_price, open_interest, open_interest_usd,
-                    funding_rate, funding_interval_hours, volume_24h_usd,
+                    funding_rate, funding_interval_hours, funding_status, next_funding_at, volume_24h_usd,
                     status, source, source_version, missing_fields, error
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (venue, symbol, market_type, observed_at) DO UPDATE SET
                     exchange_timestamp = EXCLUDED.exchange_timestamp,
+                    published_at = EXCLUDED.published_at,
                     mark_price = EXCLUDED.mark_price,
                     index_price = EXCLUDED.index_price,
                     open_interest = EXCLUDED.open_interest,
                     open_interest_usd = EXCLUDED.open_interest_usd,
                     funding_rate = EXCLUDED.funding_rate,
                     funding_interval_hours = EXCLUDED.funding_interval_hours,
+                    funding_status = EXCLUDED.funding_status,
+                    next_funding_at = EXCLUDED.next_funding_at,
                     volume_24h_usd = EXCLUDED.volume_24h_usd,
                     status = EXCLUDED.status,
                     source = EXCLUDED.source,
@@ -238,9 +250,9 @@ class DuckDbDerivativesStore:
         with self._duckdb.connect(str(self.path)) as connection:
             rows = connection.execute(
                 f"""
-                SELECT venue, symbol, market_type, instrument, observed_at, exchange_timestamp,
+                SELECT venue, symbol, market_type, instrument, observed_at, exchange_timestamp, published_at,
                        mark_price, index_price, open_interest, open_interest_usd,
-                       funding_rate, funding_interval_hours, volume_24h_usd,
+                       funding_rate, funding_interval_hours, funding_status, next_funding_at, volume_24h_usd,
                        status, source, source_version, missing_fields, error
                 FROM derivatives_observations {where}
                 ORDER BY observed_at
@@ -255,18 +267,21 @@ class DuckDbDerivativesStore:
                 instrument=row[3],
                 observed_at=_as_datetime(row[4]),
                 exchange_timestamp=_as_datetime(row[5]) if row[5] is not None else None,
-                mark_price=row[6],
-                index_price=row[7],
-                open_interest=row[8],
-                open_interest_usd=row[9],
-                funding_rate=row[10],
-                funding_interval_hours=row[11],
-                volume_24h_usd=row[12],
-                status=row[13],
-                source=row[14],
-                source_version=row[15],
-                missing_fields=tuple(json.loads(row[16])) if row[16] else (),
-                error=row[17],
+                published_at=_as_datetime(row[6]) if row[6] is not None else None,
+                mark_price=row[7],
+                index_price=row[8],
+                open_interest=row[9],
+                open_interest_usd=row[10],
+                funding_rate=row[11],
+                funding_interval_hours=row[12],
+                funding_status=row[13],
+                next_funding_at=_as_datetime(row[14]) if row[14] is not None else None,
+                volume_24h_usd=row[15],
+                status=row[16],
+                source=row[17],
+                source_version=row[18],
+                missing_fields=tuple(json.loads(row[19])) if row[19] else (),
+                error=row[20],
             )
             for row in rows
         ]

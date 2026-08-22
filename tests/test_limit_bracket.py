@@ -6,11 +6,15 @@ from crypto_simulator.limit_bracket import (
     LimitBracketSpec,
     build_limit_bracket_signal_event,
     default_mexc_event_specs,
+    default_mexc_event_v2_specs,
     _build_timeframe_view,
+    _LiveBracket,
     _MarketContext,
     _event_filter_passes,
     _limit_fill,
     _take_profit_fill,
+    _update_excursion,
+    _volatility_percentile,
 )
 from crypto_simulator.models import OHLCVBar
 
@@ -72,6 +76,60 @@ def test_mexc_event_specs_are_explicit_and_short_horizon() -> None:
     assert rejection.min_rejection_fraction == 0.55
     assert (rejection.min_prior_consecutive_green_1h, rejection.max_prior_consecutive_green_1h) == (3, 6)
     assert rejection.max_gross_leverage == 5.0
+
+
+def test_mexc_event_router_v2_has_distinct_lineage_and_permission_model() -> None:
+    v1 = default_mexc_event_specs("perpetual")
+    v2 = default_mexc_event_v2_specs("perpetual")
+    assert [spec.name for spec in v1] != [spec.name for spec in v2]
+    assert all(spec.regime_model == "legacy" for spec in v1)
+    assert all(spec.regime_model == "router_v2" for spec in v2)
+    assert all(spec.strategy_family.endswith("_router_v2") for spec in v2)
+    assert all(spec.required_regime == baseline.required_regime for spec, baseline in zip(v2, v1))
+
+
+def test_volatility_router_uses_only_trailing_history() -> None:
+    closes = [Decimal("100")] * 120
+    price = Decimal("100")
+    for index in range(20):
+        price *= Decimal("1.08") if index % 2 == 0 else Decimal("0.92")
+        closes.append(price)
+    realized, percentile = _volatility_percentile(closes, 20, 120)
+    assert realized is not None and realized > 0
+    assert percentile is not None and percentile > 0.90
+
+
+def test_mae_mfe_are_recorded_in_initial_risk_units() -> None:
+    timestamp = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    signal = LimitBracketSignal(
+        symbol="BTC",
+        direction="long",
+        signal_index=0,
+        signal_timestamp=timestamp.isoformat(),
+        limit_price=Decimal("100"),
+        atr=Decimal("5"),
+        stop_distance=Decimal("5"),
+        score=0.8,
+        regime="risk_on",
+        breadth=0.7,
+        theme_score=0.8,
+        breakout_level=Decimal("100"),
+    )
+    position = _LiveBracket(
+        "BTC",
+        "long",
+        Decimal("1"),
+        Decimal("100"),
+        timestamp.isoformat(),
+        0,
+        Decimal("0"),
+        Decimal("95"),
+        Decimal("110"),
+        signal,
+    )
+    _update_excursion(position, make_bar(timestamp, "100", "110", "90", "100"))
+    assert position.max_favorable_r == 2.0
+    assert position.max_adverse_r == 2.0
 
 
 def test_rejection_volume_event_requires_causal_confirmation_features() -> None:
