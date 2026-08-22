@@ -4,7 +4,7 @@
   "strategy_id": "hyperliquid_event_long_permission_filter_v1",
   "strategy_version": "hyperliquid_event_long_permission_filter_v1",
   "event_type": "crypto_investment_decision",
-  "generated_at": "2026-08-22T17:28:41.396774+00:00",
+  "generated_at": "2026-08-22T17:34:01.225480+00:00",
   "idempotency_key": "decision:hyperliquid_event_long_permission_filter_v1:2026-08-22T17:00:00+00:00:perpetual",
   "source": {
     "exchange": [

@@ -4,7 +4,7 @@
   "strategy_id": "bitbank_event_long_permission_filter_v1",
   "strategy_version": "bitbank_event_long_permission_filter_v1",
   "event_type": "crypto_investment_decision",
-  "generated_at": "2026-08-22T17:28:30.361890+00:00",
+  "generated_at": "2026-08-22T17:33:54.466294+00:00",
   "idempotency_key": "decision:bitbank_event_long_permission_filter_v1:2026-08-22T17:00:00+00:00:spot",
   "source": {
     "exchange": [
