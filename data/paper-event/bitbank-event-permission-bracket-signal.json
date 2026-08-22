@@ -4,15 +4,15 @@
   "strategy_id": "bitbank_event_long_permission_filter_v1",
   "strategy_version": "bitbank_event_long_permission_filter_v1",
   "event_type": "crypto_investment_decision",
-  "generated_at": "2026-08-22T17:33:54.466294+00:00",
-  "idempotency_key": "decision:bitbank_event_long_permission_filter_v1:2026-08-22T17:00:00+00:00:spot",
+  "generated_at": "2026-08-22T18:47:44.253019+00:00",
+  "idempotency_key": "decision:bitbank_event_long_permission_filter_v1:2026-08-22T18:00:00+00:00:spot",
   "source": {
     "exchange": [
       "bitbank"
     ],
     "market": "spot",
     "interval": "1hour",
-    "closed_bar_timestamp": "2026-08-22T17:00:00+00:00",
+    "closed_bar_timestamp": "2026-08-22T18:00:00+00:00",
     "benchmark_symbol": "btc_jpy",
     "symbols": [
       "btc_jpy"
