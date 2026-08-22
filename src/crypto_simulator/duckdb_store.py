@@ -144,6 +144,7 @@ class DuckDbDerivativesStore:
                     venue VARCHAR NOT NULL,
                     symbol VARCHAR NOT NULL,
                     market_type VARCHAR NOT NULL,
+                    instrument VARCHAR,
                     observed_at TIMESTAMPTZ NOT NULL,
                     exchange_timestamp TIMESTAMPTZ,
                     mark_price DECIMAL(38, 18),
@@ -162,6 +163,7 @@ class DuckDbDerivativesStore:
                 )
                 """
             )
+            connection.execute("ALTER TABLE derivatives_observations ADD COLUMN IF NOT EXISTS instrument VARCHAR")
 
     def upsert(self, observations: list[DerivativesObservation]) -> int:
         self.initialize()
@@ -170,6 +172,7 @@ class DuckDbDerivativesStore:
                 item.venue,
                 item.symbol,
                 item.market_type,
+                item.instrument,
                 item.observed_at,
                 item.exchange_timestamp,
                 item.mark_price,
@@ -193,11 +196,11 @@ class DuckDbDerivativesStore:
             connection.executemany(
                 """
                 INSERT INTO derivatives_observations (
-                    venue, symbol, market_type, observed_at, exchange_timestamp,
+                    venue, symbol, market_type, instrument, observed_at, exchange_timestamp,
                     mark_price, index_price, open_interest, open_interest_usd,
                     funding_rate, funding_interval_hours, volume_24h_usd,
                     status, source, source_version, missing_fields, error
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (venue, symbol, market_type, observed_at) DO UPDATE SET
                     exchange_timestamp = EXCLUDED.exchange_timestamp,
                     mark_price = EXCLUDED.mark_price,
@@ -235,7 +238,7 @@ class DuckDbDerivativesStore:
         with self._duckdb.connect(str(self.path)) as connection:
             rows = connection.execute(
                 f"""
-                SELECT venue, symbol, market_type, observed_at, exchange_timestamp,
+                SELECT venue, symbol, market_type, instrument, observed_at, exchange_timestamp,
                        mark_price, index_price, open_interest, open_interest_usd,
                        funding_rate, funding_interval_hours, volume_24h_usd,
                        status, source, source_version, missing_fields, error
@@ -249,20 +252,21 @@ class DuckDbDerivativesStore:
                 venue=row[0],
                 symbol=row[1],
                 market_type=row[2],
-                observed_at=_as_datetime(row[3]),
-                exchange_timestamp=_as_datetime(row[4]) if row[4] is not None else None,
-                mark_price=row[5],
-                index_price=row[6],
-                open_interest=row[7],
-                open_interest_usd=row[8],
-                funding_rate=row[9],
-                funding_interval_hours=row[10],
-                volume_24h_usd=row[11],
-                status=row[12],
-                source=row[13],
-                source_version=row[14],
-                missing_fields=tuple(json.loads(row[15])) if row[15] else (),
-                error=row[16],
+                instrument=row[3],
+                observed_at=_as_datetime(row[4]),
+                exchange_timestamp=_as_datetime(row[5]) if row[5] is not None else None,
+                mark_price=row[6],
+                index_price=row[7],
+                open_interest=row[8],
+                open_interest_usd=row[9],
+                funding_rate=row[10],
+                funding_interval_hours=row[11],
+                volume_24h_usd=row[12],
+                status=row[13],
+                source=row[14],
+                source_version=row[15],
+                missing_fields=tuple(json.loads(row[16])) if row[16] else (),
+                error=row[17],
             )
             for row in rows
         ]

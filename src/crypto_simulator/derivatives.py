@@ -65,6 +65,7 @@ class DerivativesObservation:
     funding_rate: Decimal | None = None
     funding_interval_hours: Decimal | None = None
     volume_24h_usd: Decimal | None = None
+    instrument: str | None = None
     status: str = "fresh"
     source: str = ""
     source_version: str = "public-api.v1"
@@ -76,6 +77,8 @@ class DerivativesObservation:
         if self.exchange_timestamp is not None:
             object.__setattr__(self, "exchange_timestamp", _utc(self.exchange_timestamp))
         object.__setattr__(self, "symbol", self.symbol.upper())
+        if self.instrument is not None:
+            object.__setattr__(self, "instrument", self.instrument.upper())
         for name in (
             "mark_price",
             "index_price",
@@ -148,6 +151,7 @@ class DerivativesObservation:
             funding_rate=payload.get("funding_rate"),
             funding_interval_hours=payload.get("funding_interval_hours"),
             volume_24h_usd=payload.get("volume_24h_usd"),
+            instrument=payload.get("instrument"),
             status=str(payload.get("status", "fresh")),
             source=str(payload.get("source", "")),
             source_version=str(payload.get("source_version", "public-api.v1")),

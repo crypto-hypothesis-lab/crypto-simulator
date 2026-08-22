@@ -21,6 +21,18 @@ def _timestamp_ms(value: Any, fallback: datetime) -> datetime:
     return datetime.fromtimestamp(int(value) / 1000, tz=timezone.utc)
 
 
+def _base_symbol(value: str) -> str:
+    normalized = value.upper().replace("/", "-").replace(":USDT", "-USDT").replace("_", "-")
+    if normalized.endswith("-SWAP"):
+        normalized = normalized[:-5]
+    if "-" in normalized:
+        return normalized.split("-", 1)[0]
+    for suffix in ("USDT", "USDC", "USD"):
+        if normalized.endswith(suffix) and len(normalized) > len(suffix):
+            return normalized[: -len(suffix)]
+    return normalized
+
+
 class HyperliquidDerivativesAdapter:
     """Public Hyperliquid perpetual metadata and asset-context adapter."""
 
@@ -58,6 +70,7 @@ class HyperliquidDerivativesAdapter:
                     funding_rate=context.get("funding"),
                     funding_interval_hours=Decimal("1"),
                     volume_24h_usd=context.get("dayNtlVlm"),
+                    instrument=name,
                     status="fresh" if not missing else "degraded",
                     source="hyperliquid.metaAndAssetCtxs",
                     missing_fields=missing,
@@ -83,7 +96,9 @@ class BybitDerivativesAdapter:
         normalized = symbol.replace("/", "").replace(":USDT", "").replace("_", "").upper()
         response = self.client.get(f"{self.endpoint}?category=linear&symbol={quote(normalized)}")
         if not isinstance(response, dict) or response.get("retCode") not in (0, "0"):
-            raise ValueError("unexpected Bybit ticker response")
+            code = response.get("retCode") if isinstance(response, dict) else "unknown"
+            message = response.get("retMsg", "unknown") if isinstance(response, dict) else "invalid JSON shape"
+            raise ValueError(f"Bybit ticker request failed: code={code} message={message}")
         rows = response.get("result", {}).get("list", [])
         if not rows:
             raise ValueError(f"Bybit perpetual not found: {normalized}")
@@ -92,7 +107,7 @@ class BybitDerivativesAdapter:
         missing = tuple(key for key, value in fields.items() if value in (None, ""))
         return DerivativesObservation(
             venue=self.venue,
-            symbol=normalized,
+            symbol=_base_symbol(normalized),
             market_type="perpetual",
             observed_at=observed_at,
             exchange_timestamp=_timestamp_ms(response.get("time"), observed_at),
@@ -103,6 +118,7 @@ class BybitDerivativesAdapter:
             funding_rate=row.get("fundingRate"),
             funding_interval_hours=row.get("fundingIntervalHour"),
             volume_24h_usd=row.get("turnover24h"),
+            instrument=normalized,
             status="fresh" if not missing else "degraded",
             source="bybit.v5.market.tickers",
             missing_fields=missing,
@@ -155,7 +171,7 @@ class OkxDerivativesAdapter:
         missing = tuple(key for key, value in values.items() if value in (None, ""))
         return DerivativesObservation(
             venue=self.venue,
-            symbol=inst_id,
+            symbol=_base_symbol(inst_id),
             market_type="perpetual",
             observed_at=observed_at,
             exchange_timestamp=exchange_timestamp,
@@ -166,6 +182,7 @@ class OkxDerivativesAdapter:
             funding_rate=values["funding_rate"],
             funding_interval_hours=self._funding_interval_hours(funding_row.get("fundingInterval")),
             volume_24h_usd=ticker_row.get("volCcy24h") or ticker_row.get("vol24h"),
+            instrument=inst_id,
             status="fresh" if not missing else "degraded",
             source="okx.v5.public",
             missing_fields=missing,

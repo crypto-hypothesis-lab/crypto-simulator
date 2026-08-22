@@ -30,6 +30,7 @@ def test_derivatives_duckdb_store_upserts_and_restores_history(tmp_path: Path) -
         venue="bybit",
         symbol="BTC",
         market_type="perpetual",
+        instrument="BTCUSDT",
         observed_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
         mark_price="100",
         open_interest_usd="1000",
@@ -44,3 +45,4 @@ def test_derivatives_duckdb_store_upserts_and_restores_history(tmp_path: Path) -
     assert len(loaded) == 1
     assert loaded[0].open_interest_usd == Decimal("1000")
     assert loaded[0].funding_interval_hours == Decimal("8")
+    assert loaded[0].instrument == "BTCUSDT"

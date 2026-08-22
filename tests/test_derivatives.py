@@ -106,7 +106,8 @@ def test_public_adapters_normalize_hyperliquid_bybit_and_okx() -> None:
         }
     )
     bybit = BybitDerivativesAdapter(bybit_client).fetch_snapshot("BTC/USDT", observed_at=AS_OF)
-    assert bybit.symbol == "BTCUSDT"
+    assert bybit.symbol == "BTC"
+    assert bybit.instrument == "BTCUSDT"
     assert bybit.open_interest_usd == Decimal("1000")
     assert bybit.funding_interval_hours == Decimal("8")
 
@@ -119,7 +120,8 @@ def test_public_adapters_normalize_hyperliquid_bybit_and_okx() -> None:
         }
     )
     okx = OKXDerivativesAdapter(okx_client).fetch_snapshot("BTC-USDT-SWAP", observed_at=AS_OF)
-    assert okx.symbol == "BTC-USDT-SWAP"
+    assert okx.symbol == "BTC"
+    assert okx.instrument == "BTC-USDT-SWAP"
     assert okx.open_interest_usd == Decimal("1000")
     assert okx.funding_interval_hours == Decimal("8")
     assert len(okx_client.calls) == 4
