@@ -4,15 +4,15 @@
   "strategy_id": "spot_limit_retest_balanced_0p35_1p5_2R_14d",
   "strategy_version": "spot_limit_retest_balanced_0p35_1p5_2R_14d",
   "event_type": "crypto_investment_decision",
-  "generated_at": "2026-08-22T15:30:16.733331+00:00",
-  "idempotency_key": "decision:spot_limit_retest_balanced_0p35_1p5_2R_14d:2026-08-22T15:00:00+00:00:spot",
+  "generated_at": "2026-08-22T16:35:03.695049+00:00",
+  "idempotency_key": "decision:spot_limit_retest_balanced_0p35_1p5_2R_14d:2026-08-22T16:00:00+00:00:spot",
   "source": {
     "exchange": [
       "bitbank"
     ],
     "market": "spot",
     "interval": "1hour",
-    "closed_bar_timestamp": "2026-08-22T15:00:00+00:00",
+    "closed_bar_timestamp": "2026-08-22T16:00:00+00:00",
     "benchmark_symbol": "btc_jpy",
     "symbols": [
       "btc_jpy"
@@ -22,8 +22,11 @@
   "recommended_action": "wait",
   "regime": {
     "label": "warmup",
+    "state": "normal",
     "breadth": 0.0,
     "confidence": 0.0,
+    "realized_volatility": null,
+    "volatility_percentile": null,
     "new_long_allowed": false,
     "new_short_allowed": false
   },
@@ -82,6 +85,10 @@
     "min_funding_rate": null,
     "require_funding": false,
     "max_holding_hours": null,
+    "regime_model": "legacy",
+    "volatility_window": 20,
+    "volatility_lookback": 120,
+    "volatility_stress_percentile": 0.9,
     "funding_data_available": false
   }
 }
