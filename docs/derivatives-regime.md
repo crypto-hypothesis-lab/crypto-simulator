@@ -41,6 +41,18 @@ Collect a current public snapshot for BTC and ETH:
 python -m crypto_simulator derivatives-shadow --output state/derivatives-shadow.json
 ```
 
+To retain local history without committing it to GitHub, provide a DuckDB
+path. The command upserts the new snapshots, reloads the selected symbol
+history, and then evaluates the report point-in-time:
+
+```powershell
+python -m crypto_simulator derivatives-shadow \
+  --database data/derivatives.duckdb \
+  --output state/derivatives-shadow.json
+```
+
+DuckDB is optional; install `crypto-simulator[analysis]` when using this mode.
+
 Select one or more venues and symbols:
 
 ```powershell

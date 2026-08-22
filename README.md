@@ -87,10 +87,13 @@ python -m crypto_simulator signal --input data/bitbank_btc_jpy_1hour.csv --inter
 # For a baseline comparison only:
 python -m crypto_simulator signal --single-timeframe --input data/bitbank_btc_jpy_1hour.csv --interval 1hour --output state/latest-signal.json
 python -m crypto_simulator duckdb-import --input data/bitbank_btc_jpy_1hour.csv --database data/crypto-market.duckdb
-python -m crypto_simulator derivatives-shadow --output state/derivatives-shadow.json
+python -m crypto_simulator derivatives-shadow --database data/derivatives.duckdb --output state/derivatives-shadow.json
 ```
 
-The derivatives Shadow layer is documented in
+When `--database` is supplied, snapshots are upserted into local DuckDB and
+the report is calculated from the stored point-in-time history. Without it,
+the command remains a stateless current-snapshot check. The derivatives Shadow
+layer is documented in
 [`docs/derivatives-regime.md`](docs/derivatives-regime.md). It is an evidence
 stream for later ablation and walk-forward research, not a Paper or Live order
 instruction. Missing history, stale data, and a failed venue quorum are

@@ -213,6 +213,7 @@ def main() -> None:
     derivatives_shadow.add_argument("--history", type=Path, help="additional historical observation JSON used for point-in-time changes")
     derivatives_shadow.add_argument("--as-of", help="UTC ISO-8601 evaluation timestamp; defaults to now")
     derivatives_shadow.add_argument("--min-venues", type=int, default=2)
+    derivatives_shadow.add_argument("--database", type=Path, help="optional local DuckDB path for append-only observation history")
     derivatives_shadow.add_argument("--output", type=Path, default=Path("state/derivatives-shadow.json"))
     mexc_liquid = subparsers.add_parser("mexc-liquid-select", help="select current MEXC perpetuals by public liquidity")
     mexc_liquid.add_argument("--output", type=Path, required=True)
@@ -850,6 +851,15 @@ def main() -> None:
                 observations.extend(_fetch_derivatives_observations(venues, symbols, as_of))
         except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
             parser.error(f"invalid derivatives input: {exc}")
+        if args.database:
+            from .duckdb_store import DuckDbDerivativesStore
+
+            store = DuckDbDerivativesStore(args.database)
+            store.upsert(observations)
+            stored = []
+            for symbol in symbols:
+                stored.extend(store.load(symbol=symbol, market_type="perpetual"))
+            observations = stored
         report = build_derivatives_shadow_report(
             observations,
             as_of=as_of,
