@@ -154,6 +154,28 @@ def test_future_snapshot_is_not_used_and_stale_data_is_fail_closed() -> None:
     assert classify_derivatives_regime(stale_features).no_trade is True
 
 
+def test_late_collected_exchange_timestamp_is_not_available_at_as_of() -> None:
+    late = _observation("hyperliquid", AS_OF + timedelta(hours=1), "1000", "1000")
+    late = DerivativesObservation.from_dict(
+        {**late.to_dict(), "observed_at": (AS_OF + timedelta(hours=1)).isoformat(), "exchange_timestamp": AS_OF.isoformat()}
+    )
+    features = build_derivatives_features(_history() + [late], as_of=AS_OF)["BTC"]
+    assert features.price_change_1h == Decimal("0.009174311926605504587155963")
+
+
+def test_degraded_features_are_never_tradeable() -> None:
+    partial = [
+        _observation(venue, AS_OF - timedelta(hours=1), "109", "110")
+        for venue in ("hyperliquid", "bybit")
+    ] + [
+        _observation(venue, AS_OF, "110", "120")
+        for venue in ("hyperliquid", "bybit")
+    ]
+    features = build_derivatives_features(partial, as_of=AS_OF)["BTC"]
+    assert features.status == "degraded"
+    assert classify_derivatives_regime(features).no_trade is True
+
+
 def test_shadow_report_explicitly_does_not_change_canonical_strategy() -> None:
     report = build_derivatives_shadow_report(_history(), as_of=AS_OF)
     assert report["schema"] == "crypto.derivatives-shadow.v1"

@@ -49,6 +49,18 @@ def _median_decimal(values: Iterable[Decimal]) -> Decimal | None:
     return Decimal(str(median(values))) if values else None
 
 
+def _canonical_symbol(value: str) -> str:
+    normalized = value.upper().replace("/", "-").replace("_", "-")
+    if normalized.endswith("-SWAP"):
+        normalized = normalized[:-5]
+    if "-" in normalized:
+        return normalized.split("-", 1)[0]
+    for suffix in ("USDT", "USDC", "USD"):
+        if normalized.endswith(suffix) and len(normalized) > len(suffix):
+            return normalized[: -len(suffix)]
+    return normalized
+
+
 @dataclass(frozen=True, slots=True)
 class DerivativesObservation:
     """One public derivatives snapshot normalized to UTC and USD semantics."""
@@ -76,7 +88,7 @@ class DerivativesObservation:
         object.__setattr__(self, "observed_at", _utc(self.observed_at))
         if self.exchange_timestamp is not None:
             object.__setattr__(self, "exchange_timestamp", _utc(self.exchange_timestamp))
-        object.__setattr__(self, "symbol", self.symbol.upper())
+        object.__setattr__(self, "symbol", _canonical_symbol(self.symbol))
         if self.instrument is not None:
             object.__setattr__(self, "instrument", self.instrument.upper())
         for name in (
@@ -249,12 +261,14 @@ def _history_value(
     venue: str,
     cutoff: datetime,
     max_gap: timedelta,
+    as_of: datetime,
 ) -> DerivativesObservation | None:
     candidates = [
         item
         for item in observations
         if item.venue == venue
         and _usable(item)
+        and item.observed_at <= as_of
         and item.effective_timestamp <= cutoff
         and item.effective_timestamp >= cutoff - max_gap
     ]
@@ -278,7 +292,7 @@ def build_derivatives_features(
         symbol_observations = [item for item in ordered if item.symbol == symbol]
         latest_by_venue: dict[str, DerivativesObservation] = {}
         for item in symbol_observations:
-            if item.effective_timestamp <= as_of:
+            if item.effective_timestamp <= as_of and item.observed_at <= as_of:
                 current = latest_by_venue.get(item.venue)
                 if current is None or item.effective_timestamp > current.effective_timestamp:
                     latest_by_venue[item.venue] = item
@@ -319,6 +333,7 @@ def build_derivatives_features(
                     venue=current.venue,
                     cutoff=current.effective_timestamp - timedelta(hours=hours),
                     max_gap=policy.max_history_gap,
+                    as_of=as_of,
                 )
                 if previous is None:
                     missing.add(f"history_{hours}h")
@@ -374,7 +389,7 @@ def classify_derivatives_regime(
     price = features.price_change_1h
     oi = features.open_interest_change_1h
     if (
-        features.status in {DATA_STALE, "insufficient_data"}
+        features.status != "fresh"
         or features.fresh_venue_count < policy.min_venues
         or price is None
         or oi is None
