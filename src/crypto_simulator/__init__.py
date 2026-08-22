@@ -2,6 +2,16 @@
 
 from .backtest import BacktestConfig, BacktestResult, run_backtest
 from .models import OHLCVBar
+from .derivatives import (
+    DATA_STALE,
+    DerivativesFeaturePolicy,
+    DerivativesFeatures,
+    DerivativesObservation,
+    DerivativesRegime,
+    build_derivatives_features,
+    build_derivatives_shadow_report,
+    classify_derivatives_regime,
+)
 from .portfolio import (
     FundingPoint,
     PortfolioConfig,
@@ -44,6 +54,14 @@ __all__ = [
     "MultiTimeframeSignal",
     "MultiTimeframeStrategy",
     "OHLCVBar",
+    "DATA_STALE",
+    "DerivativesFeaturePolicy",
+    "DerivativesFeatures",
+    "DerivativesObservation",
+    "DerivativesRegime",
+    "build_derivatives_features",
+    "build_derivatives_shadow_report",
+    "classify_derivatives_regime",
     "FundingPoint",
     "PortfolioConfig",
     "PortfolioMetrics",
