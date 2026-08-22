@@ -490,18 +490,57 @@ def default_mexc_event_permission_specs(market: str) -> list[LimitBracketSpec]:
     on the regime, and it keeps a separate strategy ID for clean comparison.
     """
 
-    long_spec = next(
-        spec for spec in default_mexc_event_specs(market)
-        if spec.name == "mexc_event_long_pullback_atr_v1"
-    )
+    return default_event_permission_specs(market, venue="mexc")
+
+
+def default_event_permission_specs(market: str, *, venue: str) -> list[LimitBracketSpec]:
+    """Return the venue-labelled, long-only event permission strategy.
+
+    The hypothesis is deliberately venue-neutral: the event entry is allowed
+    only while the causal regime filter is ``risk_on``.  A risk-off or neutral
+    regime blocks new entries; it never causes an automatic short.  Keeping the
+    venue in the strategy ID lets the same hypothesis be compared across
+    perpetual and spot data without mixing research lineage.
+
+    ``venue`` is a label for the research record, not a source of different
+    parameters.  Venue-specific fees, liquidity, and market type belong in the
+    backtest configuration supplied by the caller.
+    """
+
+    if market not in {"spot", "margin", "perpetual"}:
+        raise ValueError("event permission strategy requires spot, margin, or perpetual market")
+    label = str(venue).strip().lower().replace("-", "_")
+    if not label or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_" for character in label):
+        raise ValueError("venue must contain only letters, numbers, underscores, or hyphens")
     return [
-        replace(
-            long_spec,
-            name="mexc_event_long_permission_filter_v1",
-            strategy_family="mexc_event_long_permission_filter",
+        LimitBracketSpec(
+            f"{label}_event_long_permission_filter_v1",
+            market=market,
+            execution_fast=8,
+            execution_breakout_lookback=12,
+            atr_window=20,
+            trend_fast=6,
+            trend_slow=18,
+            regime_fast=20,
+            regime_slow=60,
+            relative_momentum_window=6,
+            volume_window=20,
+            entry_offset_atr=0.35,
+            stop_atr=1.5,
+            take_profit_r=2.0,
+            limit_expiry_bars=4,
+            max_holding_days=1,
+            max_holding_hours=8,
+            risk_per_trade=0.001,
+            max_positions=1,
+            top_n=1,
+            bottom_n=1,
+            breadth_threshold=0.5,
+            min_theme_score=0.55,
             risk_off_shorts=False,
             max_gross_leverage=1.0,
             symbol_max_leverage=1.0,
+            strategy_family=f"{label}_event_long_permission_filter",
             required_regime="risk_on",
         )
     ]

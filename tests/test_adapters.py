@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from crypto_simulator.adapters.binance import BinanceAdapter
@@ -37,6 +37,17 @@ def test_hyperliquid_candle_shape_is_normalized() -> None:
     assert len(bars) == 1
     assert bars[0].market_type == "perpetual"
     assert client.urls[0][1]["type"] == "candleSnapshot"
+
+
+def test_hyperliquid_candle_history_is_requested_in_bounded_windows() -> None:
+    client = FakeClient([])
+    start = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    end = start + timedelta(days=56)
+    bars = HyperliquidAdapter(client).fetch_ohlcv("BTC", "1h", start=start, end=end)
+    assert bars == []
+    assert len(client.urls) == 2
+    assert client.urls[0][1]["req"]["endTime"] - client.urls[0][1]["req"]["startTime"] == 28 * 86_400_000
+    assert client.urls[1][1]["req"]["startTime"] == client.urls[0][1]["req"]["endTime"]
 
 
 def test_hyperliquid_funding_shape_is_normalized() -> None:

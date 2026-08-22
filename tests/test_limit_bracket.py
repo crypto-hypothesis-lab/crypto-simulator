@@ -8,6 +8,7 @@ from crypto_simulator.limit_bracket import (
     default_mexc_event_specs,
     default_mexc_event_v2_specs,
     default_mexc_event_permission_specs,
+    default_event_permission_specs,
     _build_timeframe_view,
     _LiveBracket,
     _MarketContext,
@@ -99,6 +100,19 @@ def test_mexc_event_permission_profile_is_long_only_and_risk_on_gated() -> None:
     assert spec.risk_off_shorts is False
     assert spec.max_gross_leverage == 1.0
     assert spec.symbol_max_leverage == 1.0
+
+
+def test_event_permission_profile_reuses_hypothesis_but_separates_venue_lineage() -> None:
+    hyperliquid = default_event_permission_specs("perpetual", venue="hyperliquid")[0]
+    bitbank = default_event_permission_specs("spot", venue="bit-bank")[0]
+    assert hyperliquid.name == "hyperliquid_event_long_permission_filter_v1"
+    assert hyperliquid.market == "perpetual"
+    assert hyperliquid.strategy_family == "hyperliquid_event_long_permission_filter"
+    assert bitbank.name == "bit_bank_event_long_permission_filter_v1"
+    assert bitbank.market == "spot"
+    assert bitbank.required_regime == "risk_on"
+    assert bitbank.risk_off_shorts is False
+    assert bitbank.max_gross_leverage == 1.0
 
 
 def test_volatility_router_uses_only_trailing_history() -> None:

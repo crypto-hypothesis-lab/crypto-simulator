@@ -38,6 +38,7 @@ from .limit_bracket import (
     default_mexc_event_specs,
     default_mexc_event_v2_specs,
     default_mexc_event_permission_specs,
+    default_event_permission_specs,
     limit_bracket_research_report,
 )
 from .signals import build_signal_event
@@ -356,8 +357,14 @@ def main() -> None:
     limit_bracket.add_argument("--market", choices=["spot", "margin", "perpetual"], required=True)
     limit_bracket.add_argument(
         "--profile",
-        choices=["standard", "mexc-event", "mexc-event-v2", "mexc-event-permission"],
+        choices=["standard", "mexc-event", "mexc-event-v2", "mexc-event-permission", "event-permission"],
         default="standard",
+    )
+    limit_bracket.add_argument(
+        "--strategy-venue",
+        choices=["mexc", "hyperliquid", "bitbank"],
+        default="mexc",
+        help="venue label used by the venue-neutral event-permission profile",
     )
     limit_bracket.add_argument("--input", dest="inputs", action="append", required=True, metavar="SYMBOL=CSV_PATH")
     limit_bracket.add_argument("--funding", dest="fundings", action="append", type=Path, help="funding JSON from fetch-funding; repeat per symbol")
@@ -394,6 +401,7 @@ def main() -> None:
             "fast",
             "balanced",
             "deep",
+            "event-permission",
             "mexc-short",
             "mexc-long",
             "mexc-short-rejection",
@@ -402,6 +410,12 @@ def main() -> None:
             "mexc-short-rejection-v2",
         ],
         default="balanced",
+    )
+    bracket_signal.add_argument(
+        "--strategy-venue",
+        choices=["mexc", "hyperliquid", "bitbank"],
+        default="mexc",
+        help="venue label used by the venue-neutral event-permission profile",
     )
     bracket_signal.add_argument("--max-gross-leverage", type=Decimal)
     bracket_signal.add_argument("--max-leverage-map", type=Path, help="JSON object mapping symbols to exchange leverage caps")
@@ -943,7 +957,9 @@ def main() -> None:
                 leverage_map = {str(symbol): Decimal(str(value)) for symbol, value in payload.items()}
             except (OSError, json.JSONDecodeError, ValueError) as exc:
                 parser.error(f"invalid --max-leverage-map: {exc}")
-        if args.profile == "mexc-event-permission":
+        if args.profile == "event-permission":
+            specs = default_event_permission_specs(args.market, venue=args.strategy_venue)
+        elif args.profile == "mexc-event-permission":
             specs = default_mexc_event_permission_specs(args.market)
         elif args.profile == "mexc-event-v2":
             specs = default_mexc_event_v2_specs(args.market)
@@ -1005,7 +1021,9 @@ def main() -> None:
                 leverage_map = {str(symbol): Decimal(str(value)) for symbol, value in payload.items()}
             except (OSError, json.JSONDecodeError, ValueError) as exc:
                 parser.error(f"invalid --max-leverage-map: {exc}")
-        if args.profile in {
+        if args.profile == "event-permission":
+            spec = default_event_permission_specs(args.market, venue=args.strategy_venue)[0]
+        elif args.profile in {
             "mexc-short",
             "mexc-long",
             "mexc-short-rejection",

@@ -5,6 +5,7 @@ __pycache__/
 .pytest_cache/
 *.tmp
 state/*.json
+state/*.csv
 data/mexc/
 *.duckdb
 *.duckdb.wal
