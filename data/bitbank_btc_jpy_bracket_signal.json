@@ -4,15 +4,15 @@
   "strategy_id": "spot_limit_retest_balanced_0p35_1p5_2R_14d",
   "strategy_version": "spot_limit_retest_balanced_0p35_1p5_2R_14d",
   "event_type": "crypto_investment_decision",
-  "generated_at": "2026-08-22T17:29:39.867968+00:00",
-  "idempotency_key": "decision:spot_limit_retest_balanced_0p35_1p5_2R_14d:2026-08-22T17:00:00+00:00:spot",
+  "generated_at": "2026-08-22T18:42:59.052202+00:00",
+  "idempotency_key": "decision:spot_limit_retest_balanced_0p35_1p5_2R_14d:2026-08-22T18:00:00+00:00:spot",
   "source": {
     "exchange": [
       "bitbank"
     ],
     "market": "spot",
     "interval": "1hour",
-    "closed_bar_timestamp": "2026-08-22T17:00:00+00:00",
+    "closed_bar_timestamp": "2026-08-22T18:00:00+00:00",
     "benchmark_symbol": "btc_jpy",
     "symbols": [
       "btc_jpy"
