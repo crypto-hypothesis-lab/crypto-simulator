@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-hypothesis-lab.example/schemas/crypto-strategy-instance-v1.json",
+  "title": "Crypto Strategy Instance v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "strategy_id", "strategy_version", "parameters", "venues", "market_types", "interval", "required_features", "allowed_directions", "max_leverage", "stage", "enabled"],
+  "properties": {
+    "schema_version": {"const": "crypto.strategy-instance.v1"},
+    "strategy_id": {"type": "string", "minLength": 1},
+    "strategy_version": {"type": "string", "minLength": 1},
+    "parameters": {"type": "object"},
+    "venues": {"type": "array", "items": {"enum": ["bitbank", "hyperliquid", "mexc"]}, "minItems": 1, "uniqueItems": true},
+    "market_types": {"type": "array", "items": {"enum": ["spot", "margin", "perpetual"]}, "minItems": 1, "uniqueItems": true},
+    "interval": {"type": "string", "minLength": 1},
+    "required_features": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "allowed_directions": {"type": "array", "items": {"enum": ["LONG", "SHORT"]}, "minItems": 1, "uniqueItems": true},
+    "max_leverage": {"type": "string", "pattern": "^(?:[1-4](?:\\.\\d+)?|5(?:\\.0+)?)$"},
+    "stage": {"enum": ["backtest", "walk_forward", "cost_stress", "forward_test", "paper", "shadow_live", "small_live", "production", "retired"]},
+    "enabled": {"type": "boolean"}
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "schema_version": "crypto.strategy-instance.v1",
+  "strategy_id": "hyperliquid_event_long_permission_filter",
+  "strategy_version": "v1",
+  "parameters": {
+    "entry": "validated_limit_retest_after_event",
+    "regime": "permission_filter_only"
+  },
+  "venues": ["hyperliquid"],
+  "market_types": ["perpetual"],
+  "interval": "1hour",
+  "required_features": ["atr", "funding_rate", "regime", "volume_zscore"],
+  "allowed_directions": ["LONG"],
+  "max_leverage": "1",
+  "stage": "paper",
+  "enabled": true
+}
