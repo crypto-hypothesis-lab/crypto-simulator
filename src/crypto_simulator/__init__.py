@@ -49,6 +49,9 @@ from .limit_bracket import (
     run_limit_bracket_backtest,
 )
 from .strategy import MultiTimeframeSignal, MultiTimeframeStrategy
+from .feature_snapshot import FeatureSnapshot, build_feature_snapshot
+from .strategy_runner import run_strategy_fanout
+from .strategy_registry import StrategyDefinition, build_strategy_instance_id, load_strategy_registry, select_strategies
 from .timeframes import resample_ohlcv
 
 __all__ = [
@@ -56,6 +59,13 @@ __all__ = [
     "BacktestResult",
     "MultiTimeframeSignal",
     "MultiTimeframeStrategy",
+    "StrategyDefinition",
+    "FeatureSnapshot",
+    "build_feature_snapshot",
+    "build_strategy_instance_id",
+    "load_strategy_registry",
+    "run_strategy_fanout",
+    "select_strategies",
     "OHLCVBar",
     "DATA_STALE",
     "DerivativesFeaturePolicy",
