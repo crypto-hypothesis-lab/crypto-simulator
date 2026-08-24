@@ -11,7 +11,7 @@ dependencies = []
 
 [project.optional-dependencies]
 realtime = ["websockets>=13"]
-analysis = ["duckdb>=1.3,<2"]
+analysis = ["duckdb>=1.3,<2", "pytz>=2024.1"]
 exchanges = ["ccxt>=4,<5"]
 dev = ["pytest>=8"]
 

@@ -25,7 +25,8 @@ This repository is intentionally safe to publish. It contains no API keys, priva
 - Backtest reports and deterministic paper-signal JSON output.
 - A frozen forward-test report for the latest holdout window, including trades,
   costs, and a Buy & Hold comparison.
-- Standard-library-only runtime dependencies.
+- Standard-library-only base runtime dependencies; DuckDB research support is
+  available through the optional `analysis` extra.
 
 Live orders, account state, private data, alert destinations, and operational policy belong in the private `crypto-operations` repository.
 
