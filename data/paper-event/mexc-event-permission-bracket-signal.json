@@ -4,7 +4,7 @@
   "strategy_id": "mexc_event_long_permission_filter_v1",
   "strategy_version": "mexc_event_long_permission_filter_v1",
   "event_type": "crypto_investment_decision",
-  "generated_at": "2026-08-25T04:01:09.180445+00:00",
+  "generated_at": "2026-08-25T04:51:42.016425+00:00",
   "idempotency_key": "decision:mexc_event_long_permission_filter_v1:2026-08-25T04:00:00+00:00:perpetual",
   "source": {
     "exchange": [
