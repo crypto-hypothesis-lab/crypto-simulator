@@ -4,15 +4,15 @@
   "strategy_id": "mexc_event_long_permission_filter_v1",
   "strategy_version": "mexc_event_long_permission_filter_v1",
   "event_type": "crypto_investment_decision",
-  "generated_at": "2026-08-28T05:21:46.355162+00:00",
-  "idempotency_key": "decision:mexc_event_long_permission_filter_v1:2026-08-28T05:00:00+00:00:perpetual",
+  "generated_at": "2026-08-28T18:37:50.336208+00:00",
+  "idempotency_key": "decision:mexc_event_long_permission_filter_v1:2026-08-28T18:00:00+00:00:perpetual",
   "source": {
     "exchange": [
       "mexc"
     ],
     "market": "perpetual",
     "interval": "1hour",
-    "closed_bar_timestamp": "2026-08-28T05:00:00+00:00",
+    "closed_bar_timestamp": "2026-08-28T18:00:00+00:00",
     "benchmark_symbol": "BTC_USDT",
     "symbols": [
       "BTC_USDT",
@@ -43,15 +43,15 @@
     },
     {
       "rank": 2,
-      "symbol": "XRP_USDT",
-      "score": 0.4,
+      "symbol": "ETH_USDT",
+      "score": 0.5,
       "eligible_long": false,
       "eligible_short": false
     },
     {
       "rank": 3,
-      "symbol": "ETH_USDT",
-      "score": 0.1,
+      "symbol": "XRP_USDT",
+      "score": 0.0,
       "eligible_long": false,
       "eligible_short": false
     }
