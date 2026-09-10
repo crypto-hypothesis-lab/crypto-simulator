@@ -4,15 +4,15 @@
   "strategy_id": "mexc_event_long_permission_filter_v1",
   "strategy_version": "mexc_event_long_permission_filter_v1",
   "event_type": "crypto_investment_decision",
-  "generated_at": "2026-09-09T21:40:48.595145+00:00",
-  "idempotency_key": "decision:mexc_event_long_permission_filter_v1:2026-09-09T21:00:00+00:00:perpetual",
+  "generated_at": "2026-09-10T00:11:43.629517+00:00",
+  "idempotency_key": "decision:mexc_event_long_permission_filter_v1:2026-09-10T00:00:00+00:00:perpetual",
   "source": {
     "exchange": [
       "mexc"
     ],
     "market": "perpetual",
     "interval": "1hour",
-    "closed_bar_timestamp": "2026-09-09T21:00:00+00:00",
+    "closed_bar_timestamp": "2026-09-10T00:00:00+00:00",
     "benchmark_symbol": "BTC_USDT",
     "symbols": [
       "BTC_USDT",
@@ -26,8 +26,8 @@
   "regime": {
     "label": "risk_on",
     "state": "normal",
-    "breadth": 1.0,
-    "confidence": 1.0,
+    "breadth": 0.6666666666666666,
+    "confidence": 0.6666666666666666,
     "realized_volatility": null,
     "volatility_percentile": null,
     "new_long_allowed": true,
@@ -37,21 +37,21 @@
     {
       "rank": 1,
       "symbol": "ETH_USDT",
-      "score": 1.0,
+      "score": 0.9,
       "eligible_long": true,
       "eligible_short": false
     },
     {
       "rank": 2,
-      "symbol": "SOL_USDT",
-      "score": 0.5,
+      "symbol": "XRP_USDT",
+      "score": 0.4,
       "eligible_long": false,
       "eligible_short": false
     },
     {
       "rank": 3,
-      "symbol": "XRP_USDT",
-      "score": 0.0,
+      "symbol": "SOL_USDT",
+      "score": 0.2,
       "eligible_long": false,
       "eligible_short": false
     }
