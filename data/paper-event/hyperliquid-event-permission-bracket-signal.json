@@ -4,15 +4,15 @@
   "strategy_id": "hyperliquid_event_long_permission_filter_v1",
   "strategy_version": "hyperliquid_event_long_permission_filter_v1",
   "event_type": "crypto_investment_decision",
-  "generated_at": "2026-09-11T22:32:58.264791+00:00",
-  "idempotency_key": "decision:hyperliquid_event_long_permission_filter_v1:2026-09-11T22:00:00+00:00:perpetual",
+  "generated_at": "2026-09-12T01:05:31.292055+00:00",
+  "idempotency_key": "decision:hyperliquid_event_long_permission_filter_v1:2026-09-12T01:00:00+00:00:perpetual",
   "source": {
     "exchange": [
       "hyperliquid"
     ],
     "market": "perpetual",
     "interval": "1hour",
-    "closed_bar_timestamp": "2026-09-11T22:00:00+00:00",
+    "closed_bar_timestamp": "2026-09-12T01:00:00+00:00",
     "benchmark_symbol": "BTC",
     "symbols": [
       "BTC",
@@ -22,13 +22,13 @@
   "decision": "no_trade",
   "recommended_action": "wait",
   "regime": {
-    "label": "neutral",
+    "label": "risk_on",
     "state": "normal",
-    "breadth": 0.0,
-    "confidence": 0.0,
+    "breadth": 1.0,
+    "confidence": 1.0,
     "realized_volatility": null,
     "volatility_percentile": null,
-    "new_long_allowed": false,
+    "new_long_allowed": true,
     "new_short_allowed": false
   },
   "ranking": [
@@ -41,7 +41,7 @@
     }
   ],
   "candidates": [],
-  "no_trade_reason": "neutral_regime",
+  "no_trade_reason": "no_valid_limit_retest_signal",
   "guardrails": {
     "market_order_fallback": false,
     "cancel_on_regime_flip": true,
