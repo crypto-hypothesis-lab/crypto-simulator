@@ -4,15 +4,15 @@
   "strategy_id": "mexc_event_long_permission_filter_v1",
   "strategy_version": "mexc_event_long_permission_filter_v1",
   "event_type": "crypto_investment_decision",
-  "generated_at": "2026-09-15T13:30:26.277761+00:00",
-  "idempotency_key": "decision:mexc_event_long_permission_filter_v1:2026-09-15T13:00:00+00:00:perpetual",
+  "generated_at": "2026-09-15T18:10:24.235253+00:00",
+  "idempotency_key": "decision:mexc_event_long_permission_filter_v1:2026-09-15T18:00:00+00:00:perpetual",
   "source": {
     "exchange": [
       "mexc"
     ],
     "market": "perpetual",
     "interval": "1hour",
-    "closed_bar_timestamp": "2026-09-15T13:00:00+00:00",
+    "closed_bar_timestamp": "2026-09-15T18:00:00+00:00",
     "benchmark_symbol": "BTC_USDT",
     "symbols": [
       "BTC_USDT",
@@ -21,8 +21,8 @@
       "XRP_USDT"
     ]
   },
-  "decision": "actionable",
-  "recommended_action": "long",
+  "decision": "no_trade",
+  "recommended_action": "wait",
   "regime": {
     "label": "risk_on",
     "state": "normal",
@@ -56,60 +56,8 @@
       "eligible_short": false
     }
   ],
-  "candidates": [
-    {
-      "signal_id": "b9f8b7fb7d192c2e44253be8",
-      "idempotency_key": "limit-bracket:b9f8b7fb7d192c2e44253be8",
-      "symbol": "XRP_USDT",
-      "direction": "long",
-      "confidence": 0.6438271604938273,
-      "theme_score": 1.0,
-      "order": {
-        "side": "buy",
-        "type": "limit",
-        "price": "1.42702125",
-        "reduce_only": false,
-        "price_is_planned_limit": true
-      },
-      "stop_loss": {
-        "type": "stop_market_protective",
-        "trigger_price": "1.39968375",
-        "reduce_only": true
-      },
-      "take_profit": {
-        "type": "limit",
-        "trigger_price": "1.48169625",
-        "price": "1.48169625",
-        "reduce_only": true
-      },
-      "expires_at": "2026-09-15T17:00:00+00:00",
-      "max_holding_days": 1,
-      "max_holding_hours": 8,
-      "risk": {
-        "risk_per_trade": 0.001,
-        "sizing": "risk_based_after_fill",
-        "max_gross_leverage": 1.0,
-        "symbol_leverage_cap": 1.0,
-        "requires_current_equity_and_positions": true
-      },
-      "evidence": {
-        "regime": "risk_on",
-        "breadth": 0.6666666666666666,
-        "breakout_level": "1.4296",
-        "atr": "0.018225",
-        "stop_distance": "0.0273375",
-        "strategy_family": "mexc_event_long_permission_filter",
-        "daily_direction": "GREEN",
-        "consecutive_green_1h": 2,
-        "prior_consecutive_green_1h": null,
-        "volume_multiple": null,
-        "rejection_fraction": null,
-        "relative_return": 0.013161748446305065,
-        "funding_rate": null
-      }
-    }
-  ],
-  "no_trade_reason": null,
+  "candidates": [],
+  "no_trade_reason": "no_valid_limit_retest_signal",
   "guardrails": {
     "market_order_fallback": false,
     "cancel_on_regime_flip": true,
