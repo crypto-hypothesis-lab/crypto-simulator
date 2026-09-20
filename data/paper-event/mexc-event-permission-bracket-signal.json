@@ -4,15 +4,15 @@
   "strategy_id": "mexc_event_long_permission_filter_v1",
   "strategy_version": "mexc_event_long_permission_filter_v1",
   "event_type": "crypto_investment_decision",
-  "generated_at": "2026-09-20T16:47:05.611620+00:00",
-  "idempotency_key": "decision:mexc_event_long_permission_filter_v1:2026-09-20T16:00:00+00:00:perpetual",
+  "generated_at": "2026-09-20T19:26:12.384665+00:00",
+  "idempotency_key": "decision:mexc_event_long_permission_filter_v1:2026-09-20T19:00:00+00:00:perpetual",
   "source": {
     "exchange": [
       "mexc"
     ],
     "market": "perpetual",
     "interval": "1hour",
-    "closed_bar_timestamp": "2026-09-20T16:00:00+00:00",
+    "closed_bar_timestamp": "2026-09-20T19:00:00+00:00",
     "benchmark_symbol": "BTC_USDT",
     "symbols": [
       "BTC_USDT",
@@ -21,8 +21,8 @@
       "XRP_USDT"
     ]
   },
-  "decision": "actionable",
-  "recommended_action": "long",
+  "decision": "no_trade",
+  "recommended_action": "wait",
   "regime": {
     "label": "risk_on",
     "state": "normal",
@@ -44,72 +44,20 @@
     {
       "rank": 2,
       "symbol": "SOL_USDT",
-      "score": 0.4,
+      "score": 0.5,
       "eligible_long": false,
       "eligible_short": false
     },
     {
       "rank": 3,
       "symbol": "XRP_USDT",
-      "score": 0.1,
+      "score": 0.0,
       "eligible_long": false,
       "eligible_short": false
     }
   ],
-  "candidates": [
-    {
-      "signal_id": "6942ac2d84753e8c404c4f91",
-      "idempotency_key": "limit-bracket:6942ac2d84753e8c404c4f91",
-      "symbol": "ETH_USDT",
-      "direction": "long",
-      "confidence": 1.0,
-      "theme_score": 1.0,
-      "order": {
-        "side": "buy",
-        "type": "limit",
-        "price": "2630.96090",
-        "reduce_only": false,
-        "price_is_planned_limit": true
-      },
-      "stop_loss": {
-        "type": "stop_market_protective",
-        "trigger_price": "2604.22190",
-        "reduce_only": true
-      },
-      "take_profit": {
-        "type": "limit",
-        "trigger_price": "2684.43890",
-        "price": "2684.43890",
-        "reduce_only": true
-      },
-      "expires_at": "2026-09-20T20:00:00+00:00",
-      "max_holding_days": 1,
-      "max_holding_hours": 8,
-      "risk": {
-        "risk_per_trade": 0.001,
-        "sizing": "risk_based_after_fill",
-        "max_gross_leverage": 1.0,
-        "symbol_leverage_cap": 1.0,
-        "requires_current_equity_and_positions": true
-      },
-      "evidence": {
-        "regime": "risk_on",
-        "breadth": 1.0,
-        "breakout_level": "2615.09",
-        "atr": "17.826",
-        "stop_distance": "26.7390",
-        "strategy_family": "mexc_event_long_permission_filter",
-        "daily_direction": "GREEN",
-        "consecutive_green_1h": 6,
-        "prior_consecutive_green_1h": null,
-        "volume_multiple": null,
-        "rejection_fraction": null,
-        "relative_return": 0.004847627391718025,
-        "funding_rate": null
-      }
-    }
-  ],
-  "no_trade_reason": null,
+  "candidates": [],
+  "no_trade_reason": "no_valid_limit_retest_signal",
   "guardrails": {
     "market_order_fallback": false,
     "cancel_on_regime_flip": true,
