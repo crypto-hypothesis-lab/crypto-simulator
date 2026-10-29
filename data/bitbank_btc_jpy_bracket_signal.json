@@ -4,15 +4,15 @@
   "strategy_id": "spot_limit_retest_balanced_0p35_1p5_2R_14d",
   "strategy_version": "spot_limit_retest_balanced_0p35_1p5_2R_14d",
   "event_type": "crypto_investment_decision",
-  "generated_at": "2026-10-28T20:57:35.924666+00:00",
-  "idempotency_key": "decision:spot_limit_retest_balanced_0p35_1p5_2R_14d:2026-10-28T20:00:00+00:00:spot",
+  "generated_at": "2026-10-29T00:46:59.117493+00:00",
+  "idempotency_key": "decision:spot_limit_retest_balanced_0p35_1p5_2R_14d:2026-10-29T00:00:00+00:00:spot",
   "source": {
     "exchange": [
       "bitbank"
     ],
     "market": "spot",
     "interval": "1hour",
-    "closed_bar_timestamp": "2026-10-28T20:00:00+00:00",
+    "closed_bar_timestamp": "2026-10-29T00:00:00+00:00",
     "benchmark_symbol": "btc_jpy",
     "symbols": [
       "btc_jpy"
@@ -21,18 +21,18 @@
   "decision": "no_trade",
   "recommended_action": "wait",
   "regime": {
-    "label": "neutral",
+    "label": "risk_on",
     "state": "normal",
     "breadth": 1.0,
-    "confidence": 0.0,
+    "confidence": 1.0,
     "realized_volatility": null,
     "volatility_percentile": null,
-    "new_long_allowed": false,
+    "new_long_allowed": true,
     "new_short_allowed": false
   },
   "ranking": [],
   "candidates": [],
-  "no_trade_reason": "neutral_regime",
+  "no_trade_reason": "no_valid_limit_retest_signal",
   "guardrails": {
     "market_order_fallback": false,
     "cancel_on_regime_flip": true,
