@@ -4,15 +4,15 @@
   "strategy_id": "mexc_event_long_permission_filter_v1",
   "strategy_version": "mexc_event_long_permission_filter_v1",
   "event_type": "crypto_investment_decision",
-  "generated_at": "2026-10-30T19:18:50.262711+00:00",
-  "idempotency_key": "decision:mexc_event_long_permission_filter_v1:2026-10-30T19:00:00+00:00:perpetual",
+  "generated_at": "2026-10-30T23:42:31.530816+00:00",
+  "idempotency_key": "decision:mexc_event_long_permission_filter_v1:2026-10-30T23:00:00+00:00:perpetual",
   "source": {
     "exchange": [
       "mexc"
     ],
     "market": "perpetual",
     "interval": "1hour",
-    "closed_bar_timestamp": "2026-10-30T19:00:00+00:00",
+    "closed_bar_timestamp": "2026-10-30T23:00:00+00:00",
     "benchmark_symbol": "BTC_USDT",
     "symbols": [
       "BTC_USDT",
@@ -24,10 +24,10 @@
   "decision": "no_trade",
   "recommended_action": "wait",
   "regime": {
-    "label": "neutral",
+    "label": "risk_off",
     "state": "normal",
     "breadth": 0.0,
-    "confidence": 0.0,
+    "confidence": 1.0,
     "realized_volatility": null,
     "volatility_percentile": null,
     "new_long_allowed": false,
@@ -43,21 +43,21 @@
     },
     {
       "rank": 2,
-      "symbol": "ETH_USDT",
-      "score": 0.5,
+      "symbol": "SOL_USDT",
+      "score": 0.4,
       "eligible_long": false,
       "eligible_short": false
     },
     {
       "rank": 3,
-      "symbol": "SOL_USDT",
-      "score": 0.0,
+      "symbol": "ETH_USDT",
+      "score": 0.1,
       "eligible_long": false,
       "eligible_short": false
     }
   ],
   "candidates": [],
-  "no_trade_reason": "neutral_regime",
+  "no_trade_reason": "no_valid_limit_retest_signal",
   "guardrails": {
     "market_order_fallback": false,
     "cancel_on_regime_flip": true,
