@@ -4,15 +4,15 @@
   "strategy_id": "hyperliquid_event_long_permission_filter_v1",
   "strategy_version": "hyperliquid_event_long_permission_filter_v1",
   "event_type": "crypto_investment_decision",
-  "generated_at": "2026-11-13T22:34:44.773138+00:00",
-  "idempotency_key": "decision:hyperliquid_event_long_permission_filter_v1:2026-11-13T22:00:00+00:00:perpetual",
+  "generated_at": "2026-11-14T03:09:08.855954+00:00",
+  "idempotency_key": "decision:hyperliquid_event_long_permission_filter_v1:2026-11-14T03:00:00+00:00:perpetual",
   "source": {
     "exchange": [
       "hyperliquid"
     ],
     "market": "perpetual",
     "interval": "1hour",
-    "closed_bar_timestamp": "2026-11-13T22:00:00+00:00",
+    "closed_bar_timestamp": "2026-11-14T03:00:00+00:00",
     "benchmark_symbol": "BTC",
     "symbols": [
       "BTC",
